@@ -1,3 +1,5 @@
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 # AutoTeam
 
 ### Adaptive Multi-Agent Orchestration
@@ -346,13 +348,14 @@ ruff check .
 ```
 
 ```
-Tests: 60 passed
+Tests: 69 passed
 Ruff:  PASS
 CI:    Python 3.11 / 3.12
 ```
 
 - Day 1-5: 44 tests
-- Day 6: 16 tests (`tests/test_ui.py` — service functions, offline mode, failure simulation, evaluation pipeline, SVG/timeline rendering)
+- Day 6: 25 tests (`tests/test_ui.py` — service functions, offline mode, failure simulation, evaluation pipeline, SVG/timeline rendering, language toggle)
+- The UI text switches between English and Simplified Chinese; switching the language never changes the team or topology the demo allocates.
 
 `tests/test_ui.py` deliberately does not assert Streamlit HTML details. CI runs ruff, pytest, a UI import smoke test and the offline demos on Python 3.11 and 3.12 — no API key, no network, no external service.
 
@@ -395,4 +398,5 @@ Directions, not commitments:
 - [x] Day 4 — Retry & Replan
 - [x] Day 5 — Topology Evaluation
 - [x] Day 6 — Streamlit Visualization
-- [ ] v0.1.0 Release
+- [x] Bilingual UI (English / 简体中文)
+- [x] v0.1.0 Release

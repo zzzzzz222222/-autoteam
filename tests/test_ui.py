@@ -11,6 +11,19 @@ from pathlib import Path
 
 import pytest
 
+from app.demo.i18n import (
+    EN,
+    ROLE_GOALS,
+    STRINGS,
+    ZH,
+    capability_label,
+    complexity_label,
+    is_supported,
+    observation_label,
+    role_goal,
+    role_name,
+    translate,
+)
 from app.demo.render import layout_positions, render_timeline_html, render_topology_svg
 from app.demo.service import (
     FailureMode,
@@ -23,7 +36,15 @@ from app.demo.service import (
     suggest_failure_agent,
     topology_summary,
 )
-from app.demo.tasks import DEFAULT_TASK_DESCRIPTION, DEMO_TASKS, find_demo_task
+from app.demo.tasks import (
+    DEFAULT_TASK_DESCRIPTION,
+    DEFAULT_TASK_DESCRIPTION_ZH,
+    DEMO_TASKS,
+    default_task_description,
+    find_demo_task,
+    localized_description,
+    localized_labels,
+)
 from app.models.topology import TopologyType
 from app.scheduler.models import ExecutionStatus
 from app.topology.validator import TopologyValidator
@@ -226,3 +247,113 @@ def test_timeline_html_renders_every_agent() -> None:
     for agent_id in topology.agents:
         assert labels[agent_id] in html
     assert "SUCCESS" in html
+
+
+# ---------------------------------------------------------------------------
+# i18n (Task #15): every presentation string must localize without changing the
+# underlying demo outcome. Core identifiers (capabilities, roles, statuses,
+# topology types) stay English because Day 1-5 code treats them as identifiers.
+# ---------------------------------------------------------------------------
+
+
+def test_i18n_every_string_has_both_locales() -> None:
+    for key, entry in STRINGS.items():
+        assert EN in entry and ZH in entry, f"locale gap in STRINGS[{key!r}]"
+        assert isinstance(entry[EN], str) and isinstance(entry[ZH], str)
+
+
+def test_translate_falls_back_and_localizes() -> None:
+    assert translate("section.task", EN) == "1 · Task"
+    assert translate("section.task", ZH) == "1 · 任务"
+    assert translate("section.task") == "1 · Task"  # default locale is EN
+    assert translate("__unknown_key__") == "__unknown_key__"  # unknown -> key itself
+
+
+def test_complexity_capability_role_observation_labels() -> None:
+    assert complexity_label("high", ZH) == "高"
+    assert complexity_label("high", EN) == "high"
+    assert capability_label("market_research", ZH) == "市场调研"
+    assert capability_label("market_research", EN) == "market_research"
+    assert role_name("Market Researcher", ZH) == "市场研究员"
+    assert role_name("Market Researcher", EN) == "Market Researcher"
+    assert (
+        observation_label("all agents completed successfully", ZH)
+        == "全部智能体执行成功"
+    )
+    assert (
+        observation_label("all agents completed successfully", EN)
+        == "all agents completed successfully"
+    )
+    assert is_supported(EN) and is_supported(ZH)
+    assert not is_supported("fr")
+
+
+def test_role_goal_uses_english_dict_for_en_and_chinese_goal_for_zh() -> None:
+    team = team_for()
+    agent = team.agents[0]
+    zh_goal = role_goal(agent.role.name, agent.role.goal, ZH)
+    en_goal = role_goal(agent.role.name, agent.role.goal, EN)
+    assert zh_goal == agent.role.goal  # stored goal is Chinese
+    assert en_goal == ROLE_GOALS.get(agent.role.name, agent.role.goal)
+    assert en_goal != zh_goal  # the two locales differ
+
+
+def test_find_demo_task_accepts_chinese_label() -> None:
+    assert find_demo_task("市场研究") is not None
+    assert find_demo_task("市场研究").label == "Market Research"
+    assert find_demo_task("SaaS 上线计划") is not None
+    assert find_demo_task("SaaS 上线计划").label == "SaaS Launch Plan"
+    assert find_demo_task("市場研究") is None  # traditional / wrong form
+
+
+def test_localized_labels_and_descriptions_zh() -> None:
+    zh_labels = localized_labels(ZH)
+    assert "市场研究" in zh_labels and "Market Research" not in zh_labels
+    en_labels = localized_labels(EN)
+    assert "Market Research" in en_labels
+    task = find_demo_task("Market Research")
+    assert localized_description(task, ZH) == DEFAULT_TASK_DESCRIPTION_ZH
+    assert localized_description(task, EN) == DEFAULT_TASK_DESCRIPTION
+    assert default_task_description(ZH) == DEFAULT_TASK_DESCRIPTION_ZH
+    assert default_task_description(EN) == DEFAULT_TASK_DESCRIPTION
+
+
+def test_chinese_and_english_demo_tasks_build_identical_teams() -> None:
+    """The core i18n invariant: switching the UI language never changes what
+    team / topology the demo allocates, so results stay comparable."""
+    for task in DEMO_TASKS:
+        en_team = build_team(task.description)
+        zh_team = build_team(task.description_zh)
+        assert sorted(en_team.capabilities) == sorted(
+            zh_team.capabilities
+        ), f"capability mismatch for {task.label}"
+        assert [agent.role.name for agent in en_team.agents] == [
+            agent.role.name for agent in zh_team.agents
+        ], f"agent mismatch for {task.label}"
+
+
+def test_ui_renders_in_english_by_default() -> None:
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file(str(REPO_ROOT / "app" / "ui.py")).run()
+    assert not at.exception
+    assert any("1 · Task" in (item.value or "") for item in at.subheader)
+
+
+def test_ui_switches_to_chinese_on_language_radio() -> None:
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file(str(REPO_ROOT / "app" / "ui.py")).run()
+    language_radio = next(
+        item for item in at.radio if item.key == "autoteam_language"
+    )
+    language_radio.set_value("中文").run()
+    assert not at.exception
+    assert any("1 · 任务" in (item.value or "") for item in at.subheader)
+    # The same demo content re-localizes: a known Chinese capability appears.
+    assert any(
+        "市场调研" in (item.value or "") or "市场研究" in (item.value or "")
+        for item in at.markdown
+    )
