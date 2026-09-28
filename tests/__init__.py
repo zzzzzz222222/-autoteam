@@ -1,0 +1,1 @@
+"""AutoTeam test package."""

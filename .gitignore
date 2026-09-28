@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.coverage
+htmlcov/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Tooling / editors
+.idea/
+.vscode/
+.DS_Store
+node_modules/
+
+# Streamlit
+.streamlit/
+
+# Local session / agent workspace data
+.workbuddy/
+
+# Logs & temporary output
+*.log
+*.sqlite3
+*.db
