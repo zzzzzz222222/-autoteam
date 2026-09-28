@@ -25,6 +25,14 @@ from pydantic import BaseModel
 from app.llm.provider import LLMProvider, MockLLMProvider
 from app.models.agent import AgentSpec
 from app.models.task import Task
+from app.runtime.artifacts import (
+    AgentArtifact,
+    AgentDeliverable,
+    artifact_type_for,
+    now_iso,
+)
+from app.runtime.context import assemble_agent_context
+from app.runtime.events import ExecutionTrace
 from app.runtime.models import (
     CompetitorFindings,
     ReportDraft,
@@ -148,6 +156,8 @@ class AgentRuntime:
         fail_agent_ids: set[str] | None = None,
         raise_agent_ids: set[str] | None = None,
         failures_before_success: dict[str, int] | None = None,
+        trace: ExecutionTrace | None = None,
+        run_id: str = "",
     ) -> None:
         self.provider = provider or MockLLMProvider()
         self.tool_registry = tool_registry or ToolRegistry(mode="auto")
@@ -155,6 +165,8 @@ class AgentRuntime:
         self.fail_agent_ids = set(fail_agent_ids or [])
         self.raise_agent_ids = set(raise_agent_ids or [])
         self.failures_before_success = dict(failures_before_success or {})
+        self.trace = trace
+        self.run_id = run_id
         self.call_counts: dict[str, int] = {}
 
     @staticmethod
@@ -177,7 +189,7 @@ class AgentRuntime:
                 parts.append(f"[{source_id}] {output}")
         return ("\n\nUpstream inputs:\n" + "\n\n".join(parts) + "\n\n") if parts else ""
 
-    def _run_tools(self, tool_names: list[str], task: Task) -> str:
+    def _run_tools(self, tool_names: list[str], task: Task, agent_id: str = "") -> str:
         blocks: list[str] = []
         for tool_name in tool_names:
             try:
@@ -185,6 +197,14 @@ class AgentRuntime:
                 label = "offline mock" if result.offline else "web"
                 items = "\n".join(f"- {item}" for item in result.results) or "- (no results)"
                 blocks.append(f"[{tool_name} ({label})]\n{items}")
+                if self.trace is not None:
+                    self.trace.record(
+                        "TOOL_CALLED",
+                        agent_id=agent_id,
+                        message=f"{tool_name} ({label})",
+                        tool=tool_name,
+                        offline=result.offline,
+                    )
             except Exception as exc:  # tool failure must not kill the agent
                 blocks.append(f"[{tool_name}] error: {exc}")
         return ("\n\nTool results:\n" + "\n\n".join(blocks) + "\n\n") if blocks else ""
@@ -198,15 +218,97 @@ class AgentRuntime:
             f"Return JSON matching TaskDeliverable."
         )
 
+    def _artifact_prompt(self, agent_context, task: Task, tools: str) -> str:
+        system_prompt = (
+            f"You are the {agent_context.role_name}, responsible for "
+            f"{agent_context.expected_output or 'your assigned subtask'}."
+        )
+        expected_line = ", ".join(agent_context.expected_outputs) or agent_context.expected_output
+        upstream_lines = [
+            f"- [{artifact.artifact_id}] {artifact.title} ({artifact.output_type.value}): "
+            + "; ".join(f"{k}={v}" for k, v in artifact.structured_data.items())
+            for artifact in agent_context.upstream_artifacts
+        ]
+        upstream_block = (
+            "UPSTREAM ARTIFACTS:\n" + "\n".join(upstream_lines)
+            if upstream_lines
+            else "UPSTREAM ARTIFACTS:\n- (none — you are an entry agent)"
+        )
+        return (
+            f"{system_prompt}\n\n"
+            f"ROLE: {agent_context.role_name}\n"
+            f"EXPECTED_OUTPUT: {expected_line}\n"
+            f"TASK: {task.description}\n"
+            f"SUBTASK: {', '.join(agent_context.subtask_titles) or 'assigned work'}\n\n"
+            f"{upstream_block}\n"
+            f"{tools}"
+            f"Return JSON matching AgentDeliverable."
+        )
+
+    def _build_artifact(
+        self,
+        agent: AgentSpec,
+        agent_context,
+        deliverable: AgentDeliverable,
+        task: Task,
+    ) -> AgentArtifact:
+        agent_id = agent.id or "unknown"
+        artifact = AgentArtifact(
+            artifact_id=f"artifact_{agent_id}",
+            agent_id=agent_id,
+            task_id=self.run_id,
+            output_type=artifact_type_for(agent_context.expected_output),
+            title=deliverable.title or f"{agent.role.name} deliverable",
+            content=(
+                f"**{deliverable.summary}**\n\n"
+                + "\n".join(f"- {point}" for point in deliverable.key_points)
+            ),
+            structured_data=dict(deliverable.structured_data),
+            sources=list(deliverable.sources),
+            dependencies=list(agent_context.upstream_artifact_ids),
+            created_at=now_iso(),
+            metadata={
+                "source_type": "offline_mock"
+                if isinstance(self.provider, MockLLMProvider)
+                else "llm",
+                "role_name": agent.role.name,
+                "output_type_declared": agent_context.output_type,
+            },
+        )
+        if self.trace is not None:
+            self.trace.record(
+                "AGENT_OUTPUT",
+                agent_id=agent_id,
+                message=f"{agent.role.name} produced {artifact.artifact_id}",
+            )
+            self.trace.record(
+                "ARTIFACT_CREATED",
+                agent_id=agent_id,
+                message=f"{artifact.artifact_id} ({artifact.output_type.value})",
+                artifact_id=artifact.artifact_id,
+                output_type=artifact.output_type.value,
+            )
+        return artifact
+
     async def execute(self, agent: AgentSpec, context: ExecutionContext) -> Any:
         agent_id = agent.id or "unknown"
         self.call_counts[agent_id] = self.call_counts.get(agent_id, 0) + 1
         role_name = agent.role.name
         behavior = self._resolve_behavior(role_name)
-        # v0.3.0: dynamically generated agents carry their own output schema and
-        # tool list; everything else keeps the v0.2.0 behavior mapping.
+        # v0.3.0: dynamic agents carry their own output schema; v0.4.0: agents
+        # upgraded to AgentDeliverable produce dependency-aware artifacts.
+        # Everything else keeps the v0.2.0 behavior mapping.
         dynamic_model = getattr(agent, "output_schema", None)
-        use_dynamic = isinstance(dynamic_model, type) and issubclass(dynamic_model, BaseModel)
+        use_artifacts = dynamic_model is AgentDeliverable
+        use_dynamic = isinstance(dynamic_model, type) and issubclass(
+            dynamic_model, BaseModel
+        ) and not use_artifacts
+        if self.trace is not None:
+            self.trace.record(
+                "AGENT_STARTED",
+                agent_id=agent_id,
+                message=f"{role_name} started",
+            )
         self.store.record(
             RunEvent(
                 agent_id=agent_id,
@@ -225,15 +327,22 @@ class AgentRuntime:
 
             upstream = context.get_upstream_results(agent_id)
             upstream_text = self._format_upstream(upstream)
-            if use_dynamic:
+            if use_artifacts:
+                agent_context = assemble_agent_context(agent, context)
+                tool_text = self._run_tools(list(agent.tools), context.task, agent_id)
+                prompt = self._artifact_prompt(agent_context, context.task, tool_text)
+                output = self.provider.structured_completion(prompt, AgentDeliverable)
+                output = self._build_artifact(agent, agent_context, output, context.task)
+            elif use_dynamic:
                 output_model = dynamic_model
-                tool_text = self._run_tools(list(agent.tools), context.task)
+                tool_text = self._run_tools(list(agent.tools), context.task, agent_id)
                 prompt = self._dynamic_prompt(agent, context.task, upstream_text, tool_text)
+                output = self.provider.structured_completion(prompt, output_model)
             else:
                 output_model = behavior.output_model
-                tool_text = self._run_tools(behavior.tools, context.task)
+                tool_text = self._run_tools(behavior.tools, context.task, agent_id)
                 prompt = behavior.prompt_builder(context.task, role_name, upstream_text, tool_text)
-            output = self.provider.structured_completion(prompt, output_model)
+                output = self.provider.structured_completion(prompt, output_model)
             self.store.record(
                 RunEvent(
                     agent_id=agent_id,
@@ -252,4 +361,10 @@ class AgentRuntime:
                     message=str(exc),
                 )
             )
+            if self.trace is not None:
+                self.trace.record(
+                    "AGENT_FAILED",
+                    agent_id=agent_id,
+                    message=str(exc)[:200],
+                )
             raise

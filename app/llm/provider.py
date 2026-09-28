@@ -101,6 +101,8 @@ def _mock_structured(prompt: str, response_model: type[BaseModel]) -> BaseModel:
         return _mock_subtask_plan(prompt)
     if name == "TaskDeliverable":
         return _mock_task_deliverable(prompt)
+    if name == "AgentDeliverable":
+        return _mock_agent_deliverable(prompt)
     values: dict[str, object] = {}
     for field_name, field in response_model.model_fields.items():
         annotation = field.annotation
@@ -168,6 +170,73 @@ def _mock_subtask_plan(prompt: str) -> "SubtaskPlan":  # noqa: F821
             ),
         ],
     )
+
+
+def _mock_agent_deliverable(prompt: str) -> "AgentDeliverable":  # noqa: F821
+    """Deterministic offline deliverable for a v0.4.0 dynamic agent.
+
+    Parses ROLE / EXPECTED_OUTPUT / TASK lines from the assembled prompt and
+    emits a stable structured_data key=value pair so downstream agents and the
+    final artifact demonstrably carry real intermediate results.
+    """
+    from app.runtime.artifacts import AgentDeliverable
+
+    role = expected = task_line = ""
+    for line in prompt.splitlines():
+        if line.startswith("ROLE:"):
+            role = line[len("ROLE:"):].strip()
+        elif line.startswith("EXPECTED_OUTPUT:"):
+            expected = line[len("EXPECTED_OUTPUT:"):].strip()
+        elif line.startswith("TASK:"):
+            task_line = line[len("TASK:"):].strip()
+
+    default_key = f"{expected or 'task'}_result"
+    structured: dict[str, str] = {}
+    for expected_name in [item.strip() for item in expected.split(",") if item.strip()]:
+        out_key, out_value = _MOCK_OUTPUT_DATA.get(
+            expected_name, (f"{expected_name}_result", "completed_offline_mock")
+        )
+        if expected_name == "architecture_design":
+            out_value = "modular_fastapi" if "fastapi" in task_line.lower() else "layered_monolith"
+        structured[out_key] = out_value
+    if not structured:
+        structured[default_key] = "completed_offline_mock"
+
+    title_base = (expected.split(",")[0] or "deliverable").replace("_", " ").title()
+    return AgentDeliverable(
+        title=f"{role or 'Agent'} — {title_base}",
+        summary=(
+            f"[offline_mock] {role or 'Agent'} completed '{expected}' for "
+            f"'{task_line[:60]}' with deterministic stub data."
+        ),
+        key_points=[
+            f"[offline_mock] step 1 of {expected or 'the subtask'} completed.",
+            f"[offline_mock] step 2 of {expected or 'the subtask'} completed.",
+            "[offline_mock] deterministic stub — no real LLM or live tools involved.",
+        ],
+        structured_data=structured,
+        sources=[],
+    )
+
+
+_MOCK_OUTPUT_DATA: dict[str, tuple[str, str]] = {
+    "market_overview": ("market_outlook", "growing_demand"),
+    "competitor_landscape": ("competitor_positioning", "diverse_players"),
+    "technology_trends": ("technology_trend", "agent_frameworks_rising"),
+    "customer_insights": ("customer_needs", "automation_first"),
+    "data_insights": ("data_insight", "smb_segment_leading"),
+    "financial_assessment": ("financial_view", "cost_sensitive_smb"),
+    "strategy_document": ("strategy_choice", "smb_focused_entry"),
+    "requirements_document": ("requirements_scope", "mvp_scope_defined"),
+    "architecture_design": ("architecture_decision", "modular_monolith"),
+    "database_schema": ("database_schema", "relational_core_tables"),
+    "api_specification": ("api_contract", "rest_json_v1"),
+    "backend_implementation": ("backend_plan", "fastapi_router_service_layout"),
+    "test_plan": ("test_strategy", "pytest_unit_and_integration"),
+    "final_report": ("report_structure", "sectioned_markdown"),
+    "proposal_document": ("proposal_outline", "phased_rollout"),
+    "work_plan": ("work_plan", "milestone_based"),
+}
 
 
 def _mock_task_deliverable(prompt: str) -> "TaskDeliverable":  # noqa: F821

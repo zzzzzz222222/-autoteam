@@ -6,7 +6,7 @@
 
 > AutoTeam 动态组建智能体团队、生成经过校验的协作拓扑、异步执行、从故障中恢复，并评估拓扑行为。
 
-**状态：v0.1.0 已发布；v0.2.0（AutoTeam Research）与 v0.3.0（Dynamic Team Intelligence）叠加于其上。** AutoTeam 是一个离线、确定性的演示，目的是让多智能体编排的结构变得可见、可测试。它不是生产级智能体运行时，不是托管服务，也不是真实世界的 LLM 基准。详见 [局限性](#局限性)。
+**状态：v0.1.0 已发布；v0.2.0（AutoTeam Research）、v0.3.0（Dynamic Team Intelligence）与 v0.4.0（Autonomous Task Completion）叠加于其上。** AutoTeam 是一个离线、确定性的演示，目的是让多智能体编排的结构变得可见、可测试。它不是生产级智能体运行时，不是托管服务，也不是真实世界的 LLM 基准。详见 [局限性](#局限性)。
 
 ### 一段话讲清楚
 
@@ -364,6 +364,45 @@ streamlit run app/ui_dynamic.py   # 动态团队视图（含 "Why this team?"）
 
 ---
 
+## 自主任务完成（v0.4.0）
+
+v0.3.0 证明了不同任务产生不同团队。v0.4.0 证明下一个命题：**这些团队能真正协作完成复杂任务，并交付可阅读的成果。**
+
+```
+Task → 理解 → 能力 → 角色 → Agent → 工具 → 依赖
+     → 执行 → 协作（上游 Artifact）→ 失败/重试/重规划
+     → Artifact 组装 → 最终成果（可读 Markdown）
+```
+
+### 新增能力
+
+| 模块 | 职责 |
+|---|---|
+| `app/runtime/session.py` | `TaskExecutionSession`——运行生命周期（PENDING/RUNNING/SUCCESS/FAILED/PARTIAL_SUCCESS）、确定性 `CompletionCriteria`（无 LLM Judge、无评分） |
+| `app/runtime/artifacts.py` | 统一 `AgentArtifact`——id、类型、内容、`structured_data`、**依赖**（上游 artifact id）、`source_type: offline_mock / llm` |
+| `app/runtime/context.py` | 上下文装配——每个 Agent 只获得**传递性上游 Artifact** 与自身子任务信息，绝不塞入整个系统状态 |
+| `app/runtime/assembler.py` | `ArtifactAssembler` → `FinalArtifact.to_markdown()`——章节结构由 Artifact 自身派生，无固定模板、无万能 Writer |
+| `app/runtime/events.py` | 结构化执行轨迹——`TASK_STARTED / TEAM_FORMED / AGENT_STARTED / TOOL_CALLED / AGENT_OUTPUT / ARTIFACT_CREATED / AGENT_RETRY / AGENT_REPLANNED / TASK_COMPLETED` |
+| `app/ui_live.py` | Live View 升级——运行信息、时间线、协作、Artifact、最终 Markdown（查看 + 保存） |
+
+### 可证明的协作
+
+下游 Agent 真实读取上游 Artifact：System Architect 的 Artifact 携带 `architecture_decision = modular_fastapi`，Backend Developer 读取后产出 `backend_plan`，Test Engineer 读取两者，最终 Markdown 包含全部关键数据。`tests/test_autonomous.py::test_downstream_agent_receives_upstream_artifact` 断言了这一切。
+
+失败恢复完全复用现有引擎：Database Engineer 失败一次后重试成功（`AGENT_RETRY`）；持续失败则被重规划、下游 `SKIPPED`，Session 依据透明的完成判据以 `PARTIAL_SUCCESS` 结束。
+
+### Killer Demo
+
+```bash
+python examples/autonomous_task_demo.py
+```
+
+输出运行 ID、动态团队、执行分层、逐 Agent 结果、Artifact 依赖链、失败恢复演示，并把最终成果保存为可读 Markdown（`autoteam_output/<run_id>.md`）。
+
+> 离线模式仅验证编排与协作机制：Agent 输出与工具结果均为标注 `offline_mock` 的确定性桩。真实 LLM 质量未经实测不做基准声明；未连接真实网页搜索后端。
+
+---
+
 ## 快速开始
 
 ```bash
@@ -445,13 +484,16 @@ ruff check .
 ```
 
 ```
-测试：69 passed
+测试：138 passed
 Ruff：PASS
 CI：  Python 3.11 / 3.12
 ```
 
 - Day 1-5：44 个测试
-- Day 6：25 个测试（`tests/test_ui.py` —— 服务函数、离线模式、故障模拟、评估流水线、SVG/时间线渲染）
+- Day 6：27 个测试（`tests/test_ui.py` —— 服务函数、离线模式、故障模拟、评估流水线、SVG/时间线渲染、语言切换、Live View）
+- v0.2.0：11 个测试（`tests/test_research.py` —— 拆解、运行时、Provider、工具、结果传递、报告聚合、失败/恢复、离线全链路）
+- v0.3.0：28 个测试（`tests/test_dynamic_team.py` —— 任务理解、能力发现、动态拆解、角色分配、Agent 工厂、工具选择、依赖分析含环/缺失/自依赖检测、执行计划、多任务差异化、离线 E2E、UI）
+- v0.4.0：28 个测试（`tests/test_autonomous.py` —— Session 生命周期、Artifact、上下文装配、"下游读取上游"协作证明、Artifact 依赖链、组装器、完成判据、事件轨迹、重试/重规划集成、部分失败、三类任务、Killer Demo 链路、UI）
 - 中英文切换（i18n）：UI 文案在 English / 简体中文之间切换，且切换语言不改变演示所组建的团队与拓扑
 
 `tests/test_ui.py` 刻意不断言 Streamlit 的 HTML 细节。CI 在 Python 3.11 与 3.12 上运行 ruff、pytest、UI 导入冒烟测试与离线演示——无需 API key、无网络、无外部服务。
@@ -499,3 +541,4 @@ CI：  Python 3.11 / 3.12
 - [x] v0.1.0 Release
 - [x] v0.2.0 —— AutoTeam Research：在引擎之上叠加真实 Agent Runtime（任务拆解、LLM Provider、工具注册表、结果存储、研究报告、实时视图）
 - [x] v0.3.0 —— Dynamic Team Intelligence：Task → Capability → Role → Agent → Tool → Dependency → Execution Plan（三个差异化离线 Demo）
+- [x] v0.4.0 —— Autonomous Task Completion：基于上游 Artifact 的智能体协作、Artifact 组装为可读最终成果、确定性完成判据、执行轨迹、失败/重试/重规划演示

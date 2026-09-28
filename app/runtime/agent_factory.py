@@ -9,6 +9,7 @@ the existing ``AgentRuntime``.
 from __future__ import annotations
 
 from app.models.agent import AgentRole
+from app.runtime.artifacts import artifact_type_for
 from app.runtime.dynamic_models import DynamicAgentSpec, DynamicPlan, RoleSpec
 from app.runtime.models import TaskDeliverable
 from app.runtime.tool_selector import ToolSelector
@@ -33,10 +34,17 @@ class DynamicAgentFactory:
     ) -> DynamicAgentSpec:
         tools = self.tool_selector.select(role.capabilities)
         titles_by_id = {subtask.id: subtask.title for subtask in plan.subtasks}
+        outputs_by_id = {subtask.id: subtask.expected_output for subtask in plan.subtasks}
         goal = "; ".join(
             titles_by_id.get(subtask_id, subtask_id) for subtask_id in role.assigned_subtasks
         )
         caps = ", ".join(capability.value for capability in role.capabilities)
+        expected_outputs = [
+            outputs_by_id[sid] for sid in role.assigned_subtasks if outputs_by_id.get(sid)
+        ]
+        # A merged role's artifact is typed by its most advanced subtask
+        # (e.g. Backend Developer -> backend_implementation, not api_specification).
+        expected_output = expected_outputs[-1] if expected_outputs else ""
         system_prompt = (
             f"You are {role.name}, a specialist agent in the {understanding.domain} domain. "
             f"Your capabilities: {caps}. Your goal: {goal or 'complete the assigned work'}. "
@@ -58,6 +66,12 @@ class DynamicAgentFactory:
             output_schema=TaskDeliverable,
             metadata={
                 "assigned_subtasks": list(role.assigned_subtasks),
+                "subtask_titles": [
+                    titles_by_id.get(sid, sid) for sid in role.assigned_subtasks
+                ],
+                "expected_output": expected_output,
+                "expected_outputs": expected_outputs,
+                "output_type": artifact_type_for(expected_output).value,
                 "reason": f"Task requires {caps} capability.",
                 "domain": understanding.domain,
             },

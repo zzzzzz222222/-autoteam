@@ -6,7 +6,7 @@
 
 > AutoTeam dynamically forms agent teams, generates validated collaboration topologies, executes them asynchronously, recovers from failures, and evaluates topology behavior.
 
-**Status: v0.1.0 released; v0.2.0 (AutoTeam Research) and v0.3.0 (Dynamic Team Intelligence) layered on top.** AutoTeam is an offline deterministic demo built to make multi-agent orchestration structure visible and testable. It is not a production agent runtime, not a hosted service, and not a real-world LLM benchmark. See [Limitations](#limitations).
+**Status: v0.1.0 released; v0.2.0 (AutoTeam Research), v0.3.0 (Dynamic Team Intelligence) and v0.4.0 (Autonomous Task Completion) layered on top.** AutoTeam is an offline deterministic demo built to make multi-agent orchestration structure visible and testable. It is not a production agent runtime, not a hosted service, and not a real-world LLM benchmark. See [Limitations](#limitations).
 
 ### How it works in one paragraph
 
@@ -387,6 +387,45 @@ Offline mode uses deterministic rule-based discovery and mock providers. Real LL
 
 ---
 
+## Autonomous Task Completion (v0.4.0)
+
+v0.3.0 proved that different tasks produce different teams. v0.4.0 proves the next claim: **those teams actually collaborate to complete a complex task and deliver a readable result.**
+
+```
+Task → Understanding → Capability → Role → Agent → Tool → Dependency
+     → Execution → Collaboration (upstream artifacts) → Failure/Retry/Replan
+     → Artifact Assembly → Final Deliverable (readable Markdown)
+```
+
+### What is new
+
+| Module | Responsibility |
+|---|---|
+| `app/runtime/session.py` | `TaskExecutionSession` — run lifecycle (PENDING/RUNNING/SUCCESS/FAILED/PARTIAL_SUCCESS), deterministic `CompletionCriteria` (no LLM judge, no scores) |
+| `app/runtime/artifacts.py` | Unified `AgentArtifact` — id, type, content, `structured_data`, **dependencies** (upstream artifact ids), `source_type: offline_mock / llm` |
+| `app/runtime/context.py` | Context assembly — an agent receives **only its transitive upstream artifacts** plus its own subtask info, never the whole system state |
+| `app/runtime/assembler.py` | `ArtifactAssembler` → `FinalArtifact.to_markdown()` — section structure derived from the artifacts themselves, no fixed template, no universal Writer agent |
+| `app/runtime/events.py` | Structured execution trace — `TASK_STARTED / TEAM_FORMED / AGENT_STARTED / TOOL_CALLED / AGENT_OUTPUT / ARTIFACT_CREATED / AGENT_RETRY / AGENT_REPLANNED / TASK_COMPLETED` |
+| `app/ui_live.py` | Upgraded Live View — run info, timeline, collaboration, artifacts, final Markdown (view + save) |
+
+### Provable collaboration
+
+Downstream agents literally read upstream artifacts: the System Architect's artifact carries `architecture_decision = modular_fastapi`, the Backend Developer reads it and produces `backend_plan`, the Test Engineer reads both, and the final Markdown contains every key. This is asserted in `tests/test_autonomous.py::test_downstream_agent_receives_upstream_artifact`.
+
+Failure recovery reuses the existing engine unchanged: a Database Engineer that fails once retries and succeeds (`AGENT_RETRY`); one that fails permanently is replanned and its downstream is `SKIPPED`, and the session ends `PARTIAL_SUCCESS` under the transparent completion criteria.
+
+### Killer Demo
+
+```bash
+python examples/autonomous_task_demo.py
+```
+
+Prints the run id, dynamic team, execution layers, per-agent results, the artifact dependency chain, failure-recovery demos, and saves the final deliverable as readable Markdown under `autoteam_output/<run_id>.md`.
+
+> Offline mode validates orchestration and collaboration mechanics only: agent outputs and tool results are deterministic stubs labeled `offline_mock`. Real LLM quality is not benchmarked unless actually tested; no real web-search backend is connected.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -439,12 +478,12 @@ app/
 ├── topology/      Templates, generator, DAG validator
 ├── scheduler/     Async DAG scheduler, retry, replan, mock executor
 ├── evaluation/    Metrics collector, policy, evaluator, benchmark
-├── runtime/       v0.2.0 research runtime + v0.3.0 dynamic team pipeline
+├── runtime/       v0.2.0 research runtime + v0.3.0 dynamic team + v0.4.0 session/artifacts/assembler/context/events
 ├── tools/         ToolRegistry: web_search, mock_search, calculator, data_analyzer, schema_validator, code_analysis
 ├── demo/          Presentation layer: tasks, service, render, Streamlit page
 ├── config.py
 ├── ui.py          Streamlit entry point (v0.1.0)
-├── ui_live.py     Streamlit "AI Team Live View" (v0.2.0)
+├── ui_live.py     Streamlit "AI Team Live View" (v0.2.0, upgraded in v0.4.0 with artifacts + final deliverable)
 └── ui_dynamic.py  Streamlit "Dynamic Team" view (v0.3.0)
 
 examples/
@@ -453,7 +492,8 @@ examples/
 ├── scheduler_demo.py
 ├── recovery_demo.py
 ├── evaluation_demo.py
-└── dynamic_team_demo.py
+├── dynamic_team_demo.py
+└── autonomous_task_demo.py
 
 tests/
 .github/
@@ -473,7 +513,7 @@ ruff check .
 ```
 
 ```
-Tests: 110 passed
+Tests: 138 passed
 Ruff:  PASS
 CI:    Python 3.11 / 3.12
 ```
@@ -482,6 +522,7 @@ CI:    Python 3.11 / 3.12
 - Day 6: 27 tests (`tests/test_ui.py` — service functions, offline mode, failure simulation, evaluation pipeline, SVG/timeline rendering, language toggle, Live View)
 - v0.2.0: 11 tests (`tests/test_research.py` — decomposition, runtime, providers, tools, result passing, report aggregation, failure/recovery, offline run)
 - v0.3.0: 28 tests (`tests/test_dynamic_team.py` — understanding, capability discovery, dynamic decomposition, role allocation, agent factory, tool selection, dependency analysis incl. cycle/missing/self detection, execution plan, multi-task differentiation, offline E2E, UI)
+- v0.4.0: 28 tests (`tests/test_autonomous.py` — session lifecycle, artifacts, context assembly, the downstream-receives-upstream collaboration proof, artifact dependency chains, assembler, completion criteria, event trace, retry/replan integration, partial failure, three task types, Killer Demo path, UI)
 
 `tests/test_ui.py` deliberately does not assert Streamlit HTML details. CI runs ruff, pytest, a UI import smoke test and the offline demos on Python 3.11 and 3.12 — no API key, no network, no external service.
 
@@ -528,3 +569,4 @@ Directions, not commitments:
 - [x] v0.1.0 Release
 - [x] v0.2.0 — AutoTeam Research: real Agent Runtime on top of the engine (TaskDecomposer, LLM provider, ToolRegistry, ResultStore, ResearchReport, Live View)
 - [x] v0.3.0 — Dynamic Team Intelligence: Task → Capability → Role → Agent → Tool → Dependency → Execution Plan (three differentiated offline demos)
+- [x] v0.4.0 — Autonomous Task Completion: agent collaboration via upstream artifacts, artifact assembly into a readable final deliverable, deterministic completion criteria, execution trace, failure/retry/replan demos
