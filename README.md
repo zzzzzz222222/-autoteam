@@ -1,616 +1,310 @@
-[English](README.md) | [简体中文](README.zh-CN.md)
-
 # AutoTeam
 
-### Adaptive Multi-Agent Orchestration
+**Dynamic multi-agent orchestration** — turns a task into an adaptive team, a validated dependency graph, tool-enabled agents, collaborative artifacts, and a final deliverable.
 
-> AutoTeam dynamically forms agent teams, generates validated collaboration topologies, executes them asynchronously, recovers from failures, and evaluates topology behavior.
+```
+Task
+ ↓ Understanding
+ ↓ Capability Discovery
+ ↓ Role Allocation
+ ↓ Agent Factory
+ ↓ Dependency DAG
+ ↓ Async Scheduler
+ ↓ Agent Runtime (Real or Offline Mock)
+ ↓ Tool Execution
+ ↓ Artifact
+ ↓ Collaboration
+ ↓ Validation
+ ↓ Final Deliverable
+```
 
-**Status: v0.1.0 released; v0.2.0 (AutoTeam Research), v0.3.0 (Dynamic Team Intelligence), v0.4.0 (Autonomous Task Completion) and v0.5.0 (Real-World Agent Execution) layered on top.** AutoTeam is an offline deterministic demo built to make multi-agent orchestration structure visible and testable. It is not a production agent runtime, not a hosted service, and not a real-world LLM benchmark. See [Limitations](#limitations).
+AutoTeam is an **experimental**, offline-safe, deterministic-by-default framework. Everything runs with **no API key and no network**; a real LLM and real web search are optional, plug-in capabilities.
 
-### How it works in one paragraph
-
-A task is analyzed into **capabilities** → capabilities are grouped into **roles** → roles become the **agent team** → three **candidate topologies** are generated → each is **validated as a DAG** → each is **executed** by an async scheduler with **retry / replan** → results are compared **per metric** → everything is rendered in a **Streamlit UI**.
+**Python 3.11+ · `pytest` 174/174 · `ruff` clean · CI: Python 3.11 & 3.12**
 
 ---
 
-## What is AutoTeam?
+## Overview
 
-AutoTeam explores how an AI system can **dynamically construct and execute multi-agent teams** instead of relying on a fixed workflow.
-
-You give it a task. It decides which capabilities the task needs, which roles cover those capabilities, how those roles should collaborate, whether that collaboration graph is actually valid, and which candidate topology behaved better once everything ran.
-
-Key capabilities:
-
-- **Dynamic Team Formation** — the agent team is allocated per task, not hard-coded
-- **Dynamic Collaboration Topology** — Chain / Star / Hierarchical candidates are generated per team
-- **DAG Validation** — every candidate is checked as a directed acyclic graph before scheduling
-- **Async Execution** — an async DAG scheduler runs independent agents concurrently
-- **Retry / Replan** — failures retry locally first, then fall back to validator-constrained recovery
-- **Topology Evaluation** — candidates are executed independently and compared per metric
-- **Streamlit Visualization** — the whole pipeline is visible in one screen
-
-It runs fully offline. No API key, no database, no external service.
-
----
-
-## Why AutoTeam?
-
-Traditional multi-agent systems usually look like this:
+Multi-agent demos usually hard-code three agents and let them print text. AutoTeam treats the team itself as an **output of the system**: it reads the task, discovers required capabilities, forms a role for each capability, builds an agent, selects tools, analyzes dependencies, generates a valid DAG, schedules it, executes it, and assembles the results into a validated, evidence-backed deliverable.
 
 ```
-Task → Fixed Agents → Fixed Workflow → Fixed Graph
+Plain multi-agent:
+    Task → Agent A / Agent B / Agent C
+
+AutoTeam:
+    Task → Understanding → Capability → Role → Agent → Tool → Dependency
+         → Execution → Collaboration → Artifact → Final Deliverable
 ```
 
-The collaboration structure is an implementation detail decided once, up front, by a human.
+The core idea is that **Capability ≠ Role ≠ Agent**:
 
-AutoTeam treats it as part of the problem:
+- a **Capability** is a unit of work the task requires (e.g. `market_research`),
+- a **Role** is a persona that can own one or more capabilities (e.g. `Market Researcher`),
+- an **Agent** is a runtime instance of a role with a specific LLM provider, output schema, and tool set.
 
-```
-Task → Analyze Capabilities → Allocate Roles → Build Agent Team
-     → Generate Candidate Topologies → Validate DAG → Execute → Recover → Evaluate
-```
+## Why AutoTeam
 
-> **The collaboration structure is treated as part of the problem, not a fixed implementation detail.**
-
-| | Traditional multi-agent demo | AutoTeam |
+| | Typical multi-agent demo | AutoTeam |
 |---|---|---|
-| Team | Hard-coded agent list | Allocated per task from required capabilities |
-| Collaboration | Fixed chain / static graph | Three candidate topologies generated per team |
-| Graph correctness | Assumed | Validated as a DAG (acyclic, reachable, no self-loops) |
-| Execution | Sequential or framework-managed | Async DAG scheduler with concurrency limits and timeouts |
-| Failure | Crash or silent retry | Retry → deterministic replan → downstream skip |
-| Comparison | "It works" | Raw metrics per topology, reported per metric only |
+| Team | hard-coded | **derived dynamically from the task** |
+| Roles | fixed | **formed to fit required capabilities** |
+| Dependencies | none / linear | **analyzed into a validated DAG** |
+| Execution | naive loop | **async scheduler with retry + replan** |
+| Agent output | free text | **schema-constrained structured artifacts** |
+| Downstream | ignores siblings | **reads upstream artifacts + real tool results** |
+| Provenance | none | **Sources + Evidence, deterministically validated** |
+| LLM | always required | **mock by default, real optional** |
 
----
+## Core Principle
+
+Every decision flows through a single pipeline — the LLM proposes, a schema constrains, code validates, and the executor runs:
+
+```
+LLM proposes        → provider returns a Pydantic-constrained object
+Schema constrains    → response_model shapes every structured_completion call
+Code validates       → deterministic validation (no LLM judge, no scores)
+Executor executes    → scheduler / runtime / tools run the validated plan
+```
 
 ## Architecture
 
-```
-User Task
-   │
-   ▼
-Task Analyzer                 rule-based offline detection, optional LLM
-   │
-   ▼
-Capabilities
-   │
-   ▼
-Role Allocator                capability coverage → AgentSpec[]
-   │
-   ▼
-Agent Team
-   │
-   ▼
-Topology Generator
-   ├── Chain
-   ├── Star
-   └── Hierarchical
-   │
-   ▼
-DAG Validator                 acyclic / reachable / no self-loops → parallel layers
-   │
-   ▼
-Async DAG Scheduler
-   ├── Retry                  re-runs the failed agent only
-   └── Replan                 records recovery state after retries are exhausted
-   │
-   ▼
-Execution Results             PENDING / READY / RUNNING / SUCCESS / FAILED / SKIPPED
-   │
-   ▼
-Topology Evaluation           metrics → per-metric leaders
-   │
-   ▼
-Streamlit UI
+```mermaid
+flowchart LR
+    T[Task] --> U[Understanding]
+    U --> CD[Capability Discovery]
+    CD --> RA[Role Allocation]
+    RA --> AF[Agent Factory]
+    AF --> TS[Tool Selection]
+    TS --> DA[Dependency Analysis]
+    DA --> G[DAG + validation]
+    G --> S[Async Scheduler]
+    S --> RT[Agent Runtime]
+    RT --> TE[Tool Execution]
+    TE --> AR[Artifact]
+    AR --> CO[Collaboration]
+    CO --> V[Validation]
+    V --> FD[Final Deliverable]
 ```
 
----
+### Dynamic team formation
 
-## Core Design Principle
+```mermaid
+flowchart TD
+    T[Task] --> COM[Understanding:<br/>task → subtasks]
+    COM --> CD[Capability Discovery:<br/>each subtask → capabilities]
+    CD --> RA[Role Allocation:<br/>capabilities → roles]
+    RA --> AF[Agent Factory:<br/>role → AgentSpec with<br/>output schema + tools]
+    AF --> TS[Tool Selection]
+    TS --> DA[Dependency Analysis:<br/>cycles / missing / self]
+    DA --> G[Dynamic Team + DAG]
+```
 
-> **LLM proposes, Schema constrains, Code validates, Executor executes.**
+### Execution flow (offline vs real)
 
-| Layer | Responsibility |
+```mermaid
+flowchart LR
+    subgraph Real["Real mode (optional)"]
+        LLM[Real LLM provider] --> DEC[LLM decides: call tool or finish]
+        DEC -- ToolCall schema --> TR[ToolRegistry]
+        TR --> DEC
+        DEC --> DEL[AgentDeliverable]
+    end
+    AG[Agent Runtime] --> RE{"real provider?"}
+    RE -- no --> MOCK[MockLLMProvider,<br/>deterministic]
+    RE -- yes --> LLM
+    MOCK --> AR[AgentArtifact]
+    DEL --> AR
+    AR --> VAL[validate_artifact: schema,<br/>evidence, urls]
+    VAL --> DOWN[Downstream agents read<br/>upstream artifacts]
+```
+
+### Artifact collaboration
+
+```mermaid
+flowchart TD
+    RA[Requirement Analyst] --> RA_ART[requirements artifact]
+    RA_ART --> SA[System Architect]
+    SA --> SA_ART[architecture artifact]
+    SA_ART --> BD[Backend Developer]
+    BD --> BD_ART[implementation-plan artifact]
+    RA_ART --> BD
+    BD_ART --> TE[Test Engineer]
+    TE --> TE_ART[test-report artifact]
+    RA_ART & SA_ART & BD_ART & TE_ART --> ASM[Assembler]
+    ASM --> FINAL[Final Markdown + Sources + Evidence]
+```
+
+### Failure recovery
+
+```mermaid
+flowchart LR
+    A[Agent fails] --> RETRY{retries left?}
+    RETRY -- yes --> R[Retry same agent,<br/>DAG unchanged]
+    RETRY -- no --> REP[Replan:<br/>skip failed + downstream]
+    REP --> S[Session ends<br/>SUCCESS / PARTIAL_SUCCESS]
+```
+
+## Version Evolution
+
+| Version | Capability |
 |---|---|
-| **LLM** | Proposes the analysis result or a structured suggestion |
-| **Schema** | Constrains the data shape (Pydantic models) |
-| **Code** | Validates topology, dependencies and execution conditions |
-| **Executor** | Actually runs the agent |
+| v0.1.0 | Baseline orchestration engine (analysis, allocation, topologies, async scheduler, evaluation) |
+| v0.2.0 | Real Agent Runtime (LLM provider, tool registry, result store, research demo, Live View) |
+| v0.3.0 | Dynamic Team Intelligence (task → capability → role → agent → tool → dependency → plan) |
+| v0.4.0 | Autonomous Task Completion (session, artifacts, context assembly, collaboration, assembler, retry/replan) |
+| v0.5.0 | Real-World Agent Execution (real/mock LLM, executable tools, Sources/Evidence, validation) |
 
-The LLM is never trusted with graph edits. Any topology change still has to pass the same DAG validator.
-
-**Offline mode works without an API key.** Without `LLM_API_KEY`, the analyzer stays fully rule-based and deterministic. The LLM is an optional capability, not a requirement.
-
----
-
-## Capability → Role → Agent
-
-These three are not the same thing, and the distinction is a deliberate design point:
-
-- **Capability** — what the system needs to be able to do
-- **Role** — a coherent grouping of related capabilities
-- **Agent** — the executable unit that carries a role
-
-```
-Capabilities:
-  competitor_analysis
-  market_research
-        ↓
-Role:
-  Competitor Analyst
-        ↓
-Agent:
-  Competitor Analyst Agent
-```
-
-`Capability ≠ Role ≠ Agent.` The allocator covers required capabilities with role templates and falls back to a General Agent for anything uncovered — so the number of agents is a **result**, not a setting.
-
----
-
-## Topology
-
-A topology is a DAG over agent IDs. AutoTeam generates three candidates per team.
-
-**Chain** — `A → B → C → D`
-
-- Sequential
-- Low structural parallelism
-- Simple dependencies
-
-**Star**
-
-```
-      B
-      ↑
-C  ←  A  →  D
-```
-
-- High potential parallelism
-- Central root dependency
-
-**Hierarchical**
-
-```
-      A
-     / \
-    B   C
-    |
-    D
-```
-
-- Multi-level dependencies
-- Moderate parallelism
-
-Different topologies expose different execution characteristics. AutoTeam does not assume one is universally better — it measures them.
-
----
-
-## Execution & Recovery
-
-The scheduler tracks six states: `PENDING`, `READY`, `RUNNING`, `SUCCESS`, `FAILED`, `SKIPPED`.
-
-**Day 4 recovery is split in two:**
-
-- **Retry** — re-executes the current agent. *Retry does not change the DAG.*
-- **Replan** — runs after retries are exhausted. *Replan is validator-constrained.*
-
-When no viable recovery path exists, the replanner records that fact and every descendant of the failed node becomes `SKIPPED` with an explicit reason. Arbitrary graph rewrites are never performed.
-
----
-
-## Evaluation
-
-Each candidate is executed independently, then compared on raw metrics:
-
-| Metric | Meaning |
-|---|---|
-| Duration | Wall-clock time of the whole run |
-| Success Rate | Share of agents that finished successfully |
-| Failure Rate | Share of agents that failed after all retries |
-| Skipped | Agents skipped because an upstream dependency failed |
-| Recovery | Agents that succeeded only after a retry |
-| Max Concurrency | Highest number of agents observed running at once |
-| Structural Parallelism | Widest parallel layer relative to team size |
-
-AutoTeam does **not** use:
-
-- Weighted synthetic score
-- LLM judge
-- Black-box ranking
-
-It reports a **transparent per-metric comparison** — including deterministic ties, so a three-way tie on success rate is shown as a three-way tie.
-
----
-
-## Demo
+## Killer Demo
 
 ```bash
-streamlit run app/ui.py
+python examples/real_world_demo.py
 ```
 
-The UI walks the whole pipeline in one screen:
+Runs the task **"分析 AI Agent 市场，并设计一个面向中小企业的 Agent 产品方案。"** through the full pipeline — dynamic team formation, parallel execution, tool use, artifact collaboration, evidence collection, validation — and writes a final Markdown deliverable with **Sources** and **Evidence** sections to `autoteam_output/<run_id>.md`.
 
-1. **Task** — pick a preset or type your own, then `Analyze & Build Team`
-2. **Team Formation** — capabilities on the left, allocated agent cards on the right
-3. **Candidate Topologies** — agents / edges / steps / structural parallelism per candidate
-4. **Topology Graph** — layered SVG of the selected DAG
-5. **Execution** — `Run All Topologies`, with optional failure simulation
-6. **Execution Results** — per-agent status, attempt count, retry detail, skip reason, timeline
-7. **Evaluation** — full metric table
-8. **Comparison** — shortest duration, highest success rate, highest parallelism, most reliable
-
-**Failure simulation** reuses Day 4 as-is. Two scenarios are selectable:
-
-- *Retry then succeed* — `attempt 1: FAILED → attempt 2: SUCCESS`, counted as a recovered agent
-- *Retry exhausted* — the agent ends `FAILED` and every descendant becomes `SKIPPED` with an explicit reason
-
----
-
-## Demo Results
-
-Task: *"Research the AI agent market, analyze competitors and pricing, and write a market report."*
-
-Team formed: `Market Researcher`, `Competitor Analyst`, `Financial Analyst`, `Report Writer` — 4 agents from 5 detected capabilities. Mock executor, delay `0.05s`.
-
-| Metric | Chain | Star | Hierarchical |
-|---|---|---|---|
-| Duration | ~0.251s | ~0.123s | ~0.187s |
-| Max Concurrency | 1 | 3 | 2 |
-| Structural Parallelism | 25% | 75% | 50% |
-
-Per-metric leaders: shortest duration `star`, highest parallelism `star`, highest success rate and most reliable — a three-way tie.
-
-> These numbers are produced by the deterministic local mock executor and demonstrate topology behavior only. They are not real-world LLM performance benchmarks.
-
-Demo task results depend on the current capability vocabulary and the rule-based offline analyzer — different tasks produce different team sizes.
-
----
-
-## AutoTeam Research (v0.2.0)
-
-v0.2.0 is a **killer-demo layer on top of the stable v0.1.0 engine**. It does not rewrite the orchestration engine — it adds a real agent runtime, task decomposition, research tools, and result aggregation that sit *above* `AsyncDAGScheduler`.
-
-The same core principle still holds: **the LLM proposes, the schema constrains, the code validates, and the scheduler executes.**
-
-### What it does
-
-Give it a research task. It:
-
-1. **Decomposes** the task into a schema-constrained `SubtaskPlan` (a planner role)
-2. **Forms a team** — one agent per subtask (Research Agent / Competitor Analyst / Technology Analyst / Report Writer), derived directly from the plan
-3. **Builds a collaboration DAG** — edges follow each subtask's `depends_on`; the plan's fan-in structure becomes parallel layers
-4. **Executes** it through the **unchanged** `AsyncDAGScheduler` with the new `AgentRuntime` executor (so retry / replan / evaluation apply automatically)
-5. **Passes results between agents** — each agent reads its upstream siblings via `ExecutionContext.get_upstream_results`
-6. **Aggregates** the structured outputs into a final `ResearchReport`
-
-### Architecture overlay (v0.2.0)
-
-```
-User Task
-   │
-   ▼
-Task Decomposer (LLMProvider)        SubtaskPlan  (schema-constrained proposal)
-   │
-   ▼
-build_team / build_topology          AgentSpec[] + DAG  (derived from the plan)
-   │
-   ▼
-Async DAG Scheduler  ◄────────────── AgentRuntime (AgentExecutor Protocol)
-   │                                   ├── reads upstream results
-   ├── Retry / Replan (unchanged)      ├── calls ToolRegistry (web_search / mock_search)
-   │                                   └── returns a Pydantic model → AgentResult.output
-   ▼
-Aggregator (build_report)            ResearchReport  (code validates + combines)
-   │
-   ▼
-Streamlit "AI Team Live View"        app/ui_live.py  (live agent status + report)
-```
-
-### Run the Live View
-
-```bash
-streamlit run app/ui_live.py
-```
-
-The page renders the decomposition, the team/topology, a **live per-agent status** panel (pending → running → success/failed/skipped) as the background pipeline runs, and the final report. It runs **fully offline** by default — no API key.
-
-### Offline by default, real LLM optional
-
-| Env var | Purpose | Default |
-|---|---|---|
-| `AUTOTEAM_LLM_PROVIDER` | `mock` (offline) or `openai` / `deepseek` | `mock` |
-| `AUTOTEAM_API_KEY` | API key for a real provider | _none → falls back to mock_ |
-| `AUTOTEAM_LLM_MODEL` | Model id (e.g. `deepseek-chat`) | provider default |
-| `AUTOTEAM_LLM_BASE_URL` | OpenAI-compatible base URL | DeepSeek endpoint |
-| `AUTOTEAM_WEB_SEARCH_URL` / `AUTOTEAM_WEB_SEARCH_API_KEY` | real web search backend | _none → offline mock search_ |
-
-Without any key, the demo uses `MockLLMProvider` (deterministic structured stubs) and `mock_search`, so the entire research pipeline runs with no network.
-
-### Offline example output
-
-For a task like *"分析中国跨境电商 SaaS 市场的竞争格局与技术趋势"* the offline pipeline produces:
-
-- **Team:** `research_agent`, `competitor_analyst`, `technology_analyst`, `report_writer`
-- **Topology:** 2 parallel layers — `[research, competitor, technology]` → `[report_writer]`
-- **Report:** aggregated `market_overview` / `competitors` / `technology` sections plus collected `sources`
-
-> Numbers and text in offline mode are deterministic stubs. They prove the orchestration, result-passing and aggregation mechanics — not real research quality.
-
----
-
-## Dynamic Team Intelligence (v0.3.0)
-
-v0.3.0 proves the core claim: **AutoTeam does not run a fixed set of agents through a fixed flow.** A task is transformed dynamically into:
-
-```
-Task → Task Understanding → Capability Discovery → Task Decomposition
-     → Role Allocation → Dynamic Agent Generation → Tool Selection
-     → Dependency Analysis → Execution Plan → Existing Scheduler → Existing Runtime
-```
-
-Different tasks produce **visibly different teams** — different capabilities, roles, agents, tools, dependencies and execution layers. Nothing is hard-coded: the team is a *result* of the task, never a setting.
-
-### New building blocks
-
-| Module | Responsibility |
-|---|---|
-| `app/runtime/understanding.py` | `TaskUnderstanding` — domain, objective, expected output, capability set |
-| `app/runtime/capability_discovery.py` | Deterministic keyword rules (+ optional LLM refinement, validated against the capability vocabulary) |
-| `app/runtime/decomposer.py` → `DynamicDecomposer` | Stage-based decomposition into `DynamicSubtask`s with **structured ids and dependencies** (backward compatible with the v0.2.0 `TaskDecomposer`) |
-| `app/runtime/role_allocation.py` | Groups subtasks into roles — one role may own several subtasks (e.g. Backend Developer = API design + implementation) |
-| `app/runtime/agent_factory.py` | `DynamicAgentSpec` (extends `AgentSpec`) with system prompt, tools, input/output schemas and a structured reason |
-| `app/runtime/tool_selector.py` | Capability → tool mapping, filtered against the `ToolRegistry` — tools can never be invented |
-| `app/runtime/dependency.py` | Validates the dependency DAG (missing / self / cycle), lifts it onto agents, computes layers with the existing validator |
-| `app/runtime/dynamic_team.py` | `build_dynamic_team(task)` → `ExecutionPlan` (+ `TeamFormationExplanation`); `run_dynamic_team(plan)` executes via the existing scheduler |
-
-The explanation ("Why this team?") stores only structured, displayable reasons — never LLM chain-of-thought.
-
-### Three offline demos, three different teams
-
-| | Demo A · AI Agent market analysis | Demo B · FastAPI e-commerce backend | Demo C · SaaS market entry strategy |
-|---|---|---|---|
-| Domain | market_research | software_engineering | business_strategy |
-| Capabilities | market, competitor, technology, data, report | requirement, architecture, api, database, backend, testing | market, strategy, customer, financial, proposal |
-| Roles | Market Researcher · Competitor Analyst · Data Analyst · Technology Analyst · Report Writer | Requirement Analyst · System Architect · Backend Developer · Database Engineer · Test Engineer | Customer Researcher · Market Researcher · Strategy Planner · Financial Analyst · Proposal Writer |
-| Tools | web_search · data_analyzer · calculator | schema_validator · code_analysis | web_search · data_analyzer · calculator |
-| Layers | 3 | 5 | 4 |
-
-Run the demo:
-
-```bash
-python examples/dynamic_team_demo.py
-streamlit run app/ui_dynamic.py   # Dynamic Team view with "Why this team?"
-```
-
-Offline mode uses deterministic rule-based discovery and mock providers. Real LLM mode (set `AUTOTEAM_API_KEY`) lets the LLM propose the understanding and the plan — the code still validates capabilities, dependencies and the DAG, and falls back to the deterministic rules on any violation. No real research-quality benchmark is claimed anywhere.
-
----
-
-## Autonomous Task Completion (v0.4.0)
-
-v0.3.0 proved that different tasks produce different teams. v0.4.0 proves the next claim: **those teams actually collaborate to complete a complex task and deliver a readable result.**
-
-```
-Task → Understanding → Capability → Role → Agent → Tool → Dependency
-     → Execution → Collaboration (upstream artifacts) → Failure/Retry/Replan
-     → Artifact Assembly → Final Deliverable (readable Markdown)
-```
-
-### What is new
-
-| Module | Responsibility |
-|---|---|
-| `app/runtime/session.py` | `TaskExecutionSession` — run lifecycle (PENDING/RUNNING/SUCCESS/FAILED/PARTIAL_SUCCESS), deterministic `CompletionCriteria` (no LLM judge, no scores) |
-| `app/runtime/artifacts.py` | Unified `AgentArtifact` — id, type, content, `structured_data`, **dependencies** (upstream artifact ids), `source_type: offline_mock / llm` |
-| `app/runtime/context.py` | Context assembly — an agent receives **only its transitive upstream artifacts** plus its own subtask info, never the whole system state |
-| `app/runtime/assembler.py` | `ArtifactAssembler` → `FinalArtifact.to_markdown()` — section structure derived from the artifacts themselves, no fixed template, no universal Writer agent |
-| `app/runtime/events.py` | Structured execution trace — `TASK_STARTED / TEAM_FORMED / AGENT_STARTED / TOOL_CALLED / AGENT_OUTPUT / ARTIFACT_CREATED / AGENT_RETRY / AGENT_REPLANNED / TASK_COMPLETED` |
-| `app/ui_live.py` | Upgraded Live View — run info, timeline, collaboration, artifacts, final Markdown (view + save) |
-
-### Provable collaboration
-
-Downstream agents literally read upstream artifacts: the System Architect's artifact carries `architecture_decision = modular_fastapi`, the Backend Developer reads it and produces `backend_plan`, the Test Engineer reads both, and the final Markdown contains every key. This is asserted in `tests/test_autonomous.py::test_downstream_agent_receives_upstream_artifact`.
-
-Failure recovery reuses the existing engine unchanged: a Database Engineer that fails once retries and succeeds (`AGENT_RETRY`); one that fails permanently is replanned and its downstream is `SKIPPED`, and the session ends `PARTIAL_SUCCESS` under the transparent completion criteria.
-
-### Killer Demo
-
-```bash
-python examples/autonomous_task_demo.py
-```
-
-Prints the run id, dynamic team, execution layers, per-agent results, the artifact dependency chain, failure-recovery demos, and saves the final deliverable as readable Markdown under `autoteam_output/<run_id>.md`.
-
-> Offline mode validates orchestration and collaboration mechanics only: agent outputs and tool results are deterministic stubs labeled `offline_mock`. Real LLM quality is not benchmarked unless actually tested; no real web-search backend is connected.
-
----
-
-## Real-World Agent Execution (v0.5.0)
-
-v0.4.0 proved the offline team collaborates to a deliverable. v0.5.0 upgrades those verified mechanics from offline mock to **real execution**: a real LLM driver, real tool use (web search / calculator / local knowledge), and evidence-backed structured artifacts with deterministic validation — while keeping v0.4.0's scheduler, retry, replan, dynamic team and artifact assembly untouched.
-
-```
-Task → Dynamic Team → Agent → Real/Mock LLM → Tool Use (web_search, calculator,
-     local_knowledge) → Structured Artifact → Evidence/Sources → Artifact Validation
-     → Agent Collaboration → Final Deliverable
-```
-
-### What is new
-
-| Module | Responsibility |
-|---|---|
-| `app/llm/provider.py` | `LLMProvider` + `ProviderError`. `MockLLMProvider` (offline), `OpenAILLMProvider` (OpenAI/DeepSeek-compatible), `get_llm_provider()` auto-resolves mock when no key. Provider errors never leak the API key. |
-| `app/tools/registry.py` | Executable `ToolRegistry` with `validate()` / `execute()` returning structured `ToolResult`; `SearchResult`/`SearchResults`; structured errors `ToolNotFound` / `ToolValidationError` / `ToolExecutionError`. |
-| `app/tools/calculator.py` | Safe AST-based arithmetic — no `eval`. |
-| `app/tools/local_knowledge.py` | Controlled reads of `.md/.txt/.json/.csv` inside one workspace; rejects path traversal, secrets, disallowed extensions. |
-| `app/runtime/artifacts.py` | `Source` / `Evidence` / `ToolCall` / `AgentDecision`; `AgentArtifact` grows `source_records` + `evidence`. |
-| `app/runtime/validation.py` | Deterministic validation: schema, evidence→source references, http(s) URLs — no LLM judge. |
-| `app/runtime/agent_runtime.py` | Real-mode tool-calling loop (bounded by `max_tool_calls` / `max_iterations`); offline path unchanged. |
-| `examples/real_world_demo.py` | One demo, two modes (offline / real). |
-| `app/ui_live.py` | Minimal Live View additions: execution mode, tools used, sources, evidence. |
-
-### Dual mode
-
-- **Offline mode (default)** — no API key. `web_search` returns deterministic results labeled `offline_mock` with **empty URLs** (real URLs are never fabricated); sources/evidence are marked `offline_mock`. `python examples/real_world_demo.py` and `pytest -q` run fully offline.
-- **Real mode (optional)** — set `AUTOTEAM_API_KEY` (+ optionally `AUTOTEAM_LLM_PROVIDER`, `AUTOTEAM_LLM_BASE_URL`, `AUTOTEAM_LLM_MODEL`) for a real LLM; set `AUTOTEAM_WEB_SEARCH_URL` + `AUTOTEAM_WEB_SEARCH_API_KEY` for real web search. A real search failure degrades to structured offline results instead of crashing. Real mode is **not** exercised by CI or tests.
-
-### Evidence / no fabrication
-
-Artifacts carry provenance: every `Evidence` references a `Source` that exists, and every source is either a real tool result (web) or explicitly `offline_mock` with no URL. Nothing is invented; artifact validation rejects broken references and non-http URLs deterministically before downstream use.
-
-### Killer Demo
-
-```bash
-python examples/real_world_demo.py   # offline mode (no API key)
-```
-
----
+This needs **no API key** and runs offline end-to-end.
 
 ## Quick Start
 
 ```bash
-git clone <repository>
+git clone <your-repo-url>
 cd autoteam
 ```
 
 ```bash
-# Windows
+# create a virtual environment
 python -m venv .venv
+# Windows
 .venv\Scripts\activate
-
 # Linux / macOS
-python3 -m venv .venv
 source .venv/bin/activate
 ```
 
 ```bash
+# install the project (includes [ui, dev] extras)
 pip install -e ".[ui,dev]"
+
+# run the full test suite and lint
+pytest -q
+ruff check .
+
+# run an offline demo
+python examples/autonomous_task_demo.py
+
+# run the v0.5.0 killer demo
+python examples/real_world_demo.py
+
+# launch the Streamlit UI
 streamlit run app/ui.py
 ```
 
----
+## Offline Mode
 
-## CLI / Offline Mode
+Every demo and every test runs **offline by default — no API key, no network, no database**.
 
-No API key, no database, no Redis, no external service is required to run any demo.
+Without configuration AutoTeam still demonstrates the entire pipeline: dynamic team formation, tool selection, dependency analysis, DAG generation, retry, replan, agent runtime, tool execution, artifacts, evidence, collaboration, and the final deliverable. In offline mode the LLM provider is `MockLLMProvider` and `web_search` returns deterministic results labeled `offline_mock` — real URLs are **never fabricated**.
+
+## Real Mode (optional)
+
+AutoTeam supports an **OpenAI / DeepSeek-compatible** LLM provider. Configure it with environment variables (see [.env.example](.env.example)):
 
 ```bash
-python main.py "Create a market research report for a new AI product."
-python examples/demo.py
-python examples/topology_demo.py
-python examples/scheduler_demo.py
-python examples/recovery_demo.py
-python examples/evaluation_demo.py
+AUTOTEAM_API_KEY=your_key
+AUTOTEAM_LLM_PROVIDER=deepseek      # or openai
+AUTOTEAM_LLM_MODEL=deepseek-chat
+AUTOTEAM_LLM_BASE_URL=https://api.deepseek.com/v1
 ```
 
-If you want a real LLM to drive task analysis, copy `.env.example` to `.env` and fill in `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`. It is strictly optional — without it the analyzer stays rule-based and offline.
+Real web search is also optional and plugs into any HTTP search API:
 
----
-
-## Project Structure
-
-```
-app/
-├── models/        Pydantic schemas: Task, Capability, AgentSpec, Topology, ResearchReport
-├── analyzer/      Task analysis — rules first, optional LLM
-├── allocator/     Capability → Role → AgentSpec allocation
-├── llm/           LLM provider abstraction (mock + OpenAI/DeepSeek compatible)
-├── topology/      Templates, generator, DAG validator
-├── scheduler/     Async DAG scheduler, retry, replan, mock executor
-├── evaluation/    Metrics collector, policy, evaluator, benchmark
-├── runtime/       v0.2.0 research runtime + v0.3.0 dynamic team + v0.4.0 session/artifacts/assembler/context/events + v0.5.0 validation + Source/Evidence
-├── tools/         Executable ToolRegistry: web_search (offline/real), calculator (safe AST), local_knowledge, mock_search, data_analyzer, schema_validator, code_analysis
-├── demo/          Presentation layer: tasks, service, render, Streamlit page
-├── config.py
-├── ui.py          Streamlit entry point (v0.1.0)
-├── ui_live.py     Streamlit "AI Team Live View" (v0.2.0, upgraded in v0.4.0/v0.5.0 with artifacts, mode, tools, sources, evidence)
-└── ui_dynamic.py  Streamlit "Dynamic Team" view (v0.3.0)
-
-examples/
-├── demo.py
-├── topology_demo.py
-├── scheduler_demo.py
-├── recovery_demo.py
-├── evaluation_demo.py
-├── dynamic_team_demo.py
-├── autonomous_task_demo.py
-└── real_world_demo.py   (v0.5.0 — offline by default, optional real LLM/web search)
-
-tests/
-.github/
-└── workflows/
-    └── ci.yml
+```bash
+AUTOTEAM_WEB_SEARCH_URL=https://your-search-api.example.com
+AUTOTEAM_WEB_SEARCH_API_KEY=your_key
 ```
 
-`app/demo/` is a pure adapter: `service.py` wires existing components together, `render.py` produces SVG/HTML, `app.py` renders. No scheduler, topology, retry or evaluation logic is duplicated there.
+> **Honest status:** Real LLM and Real Web Search adapters are **implemented**. This environment has no real API credentials, so **actual external API calls were not verified before this release**. The real adapter is not exercised by CI or tests; a real search failure degrades to structured offline results instead of crashing. If no key is present, `get_llm_provider()` returns the mock automatically.
 
----
+## Tools
+
+`ToolRegistry` exposes `validate()` and `execute()` behind a structured `ToolCall {tool_name, arguments}` schema, returning typed results:
+
+| Tool | Offline | Real |
+|---|---|---|
+| `web_search` | deterministic `offline_mock` results, empty URLs | HTTP call with timeout, response validation, key never logged |
+| `calculator` | safe AST arithmetic — **no `eval`** | same |
+| `local_knowledge` | controlled reads of a workspace (`.md/.txt/.json/.csv`), path-traversal blocked | same |
+| `mock_search`, `data_analyzer`, `schema_validator`, `code_analysis` | deterministic offline stubs | — |
+
+Structured errors: `ToolNotFound`, `ToolValidationError`, `ToolExecutionError`.
+
+## Evidence
+
+Every claim an agent makes is backed by a registered **Source**:
+
+- `Source {id, title, url, source_type, retrieved_at}` — a retrievable provenance record
+- `Evidence {claim, evidence, source_id}` — a claim linked to a source
+
+`source_id` **must exist** in the artifact's sources or the artifact is rejected. Offline sources carry `source_type=offline_mock` and an empty `url`; nothing is fabricated.
+
+## Agent Collaboration
+
+Agents are more than parallel text printers. Each agent emits a schema-constrained **AgentArtifact** that downstream agents actually read:
+
+- Requirement Analyst → `requirements` artifact
+- System Architect → `architecture` artifact
+- Backend Developer → `implementation-plan` artifact
+- Test Engineer → `test-report` artifact
+
+The assembler consumes the artifact graph and produces the final deliverable.
+
+## Failure Recovery
+
+- **Retry** reruns a failed agent without changing the DAG.
+- **Replan** triggers after retries are exhausted, skipping the failed agent and its downstream dependents.
+- The session ends with a transparent, code-evaluated verdict: `SUCCESS`, `PARTIAL_SUCCESS`, or `FAILED` — **no LLM judge, no scores.**
 
 ## Testing
 
-```bash
-pytest -q
-ruff check .
-```
+Current verified status:
 
-```
-Tests: 174 passed
-Ruff:  PASS
-CI:    Python 3.11 / 3.12
-```
+| Check | Result |
+|---|---|
+| `pytest -q` | 174 passed |
+| `ruff check .` | clean |
+| v0.1.0 regression | pass |
+| v0.2.0 regression | pass |
+| v0.3.0 regression | pass |
+| v0.4.0 regression | pass |
+| v0.5.0 tests (36) | pass |
+| Offline demos | run in CI, no API key |
+| UI | import smoke-tested in CI |
 
-- Day 1-5: 44 tests
-- Day 6: 27 tests (`tests/test_ui.py` — service functions, offline mode, failure simulation, evaluation pipeline, SVG/timeline rendering, language toggle, Live View)
-- v0.2.0: 11 tests (`tests/test_research.py` — decomposition, runtime, providers, tools, result passing, report aggregation, failure/recovery, offline run)
-- v0.3.0: 28 tests (`tests/test_dynamic_team.py` — understanding, capability discovery, dynamic decomposition, role allocation, agent factory, tool selection, dependency analysis incl. cycle/missing/self detection, execution plan, multi-task differentiation, offline E2E, UI)
-- v0.4.0: 28 tests (`tests/test_autonomous.py` — session lifecycle, artifacts, context assembly, the downstream-receives-upstream collaboration proof, artifact dependency chains, assembler, completion criteria, event trace, retry/replan integration, partial failure, three task types, Killer Demo path, UI)
-- v0.5.0: 36 tests (`tests/test_realworld.py` — provider/mock/error/fallback, calculator safety, dual-mode web search + real adapter validation, local knowledge + path-traversal rejection, structured tool calling + limits, Source/Evidence + reference validation, artifact validation, evidence flow into the final deliverable, offline real-world demo, API-key non-leak)
+## Security
 
-`tests/test_ui.py` deliberately does not assert Streamlit HTML details. CI runs ruff, pytest, a UI import smoke test and the offline demos on Python 3.11 and 3.12 — no API key, no network, no external service.
-
----
+- `calculator` uses an **AST whitelist**, never `eval`.
+- `local_knowledge` blocks path traversal and secret-named / non-whitelisted files.
+- **API keys never** appear in artifacts, events, logs, or exception messages.
+- Secrets and local paths are excluded via `.gitignore`; verified no absolute local paths in the tree.
 
 ## Limitations
 
-This is an architectural exploration, not a production orchestration platform. Current boundaries:
+AutoTeam is an **experimental design study**, not a production platform. Honest boundaries:
 
-- Offline task analysis is **rule-based** and intentionally lightweight
-- Topology candidates currently use **predefined templates** (Chain / Star / Hierarchical)
-- Agent execution uses **deterministic mock executors** for offline demos
-- Evaluation focuses on **structural and execution metrics**, not output quality
-- No production distributed execution layer
-- No persistent workflow state
-- No real-world LLM performance benchmark
-
----
-
-## Future Work
-
-Directions, not commitments:
-
-- LLM-assisted capability discovery
-- More topology templates
-- Distributed execution
-- Persistent workflow state
-- Real-world benchmark suite
-- Cost-aware topology selection
-- Dynamic topology adaptation
-- Production agent executors
-
----
+- Offline mock results are **not** a substitute for real model quality.
+- Real LLM and Real Web Search are implemented but **not verified against live APIs** in this environment.
+- Session state is **in-memory** (no persistence, no checkpointing).
+- Completeness is judged by **deterministic rules**, not model scoring.
+- This is **not** a production-grade distributed execution layer.
 
 ## Roadmap
 
-- [x] Day 1 — Dynamic Team Formation
-- [x] Day 2 — Dynamic Topology Generation
-- [x] Day 3 — Async DAG Scheduler
-- [x] Day 4 — Retry & Replan
-- [x] Day 5 — Topology Evaluation
-- [x] Day 6 — Streamlit Visualization
-- [x] Bilingual UI (English / 简体中文)
-- [x] v0.1.0 Release
-- [x] v0.2.0 — AutoTeam Research: real Agent Runtime on top of the engine (TaskDecomposer, LLM provider, ToolRegistry, ResultStore, ResearchReport, Live View)
-- [x] v0.3.0 — Dynamic Team Intelligence: Task → Capability → Role → Agent → Tool → Dependency → Execution Plan (three differentiated offline demos)
-- [x] v0.4.0 — Autonomous Task Completion: agent collaboration via upstream artifacts, artifact assembly into a readable final deliverable, deterministic completion criteria, execution trace, failure/retry/replan demos
-- [x] v0.5.0 — Real-World Agent Execution: real/mock LLM provider with auto-fallback, executable ToolRegistry (web_search dual-mode / calculator / local knowledge), structured tool calling with limits, Source/Evidence provenance, deterministic artifact + evidence validation, evidence-backed final deliverable, offline + optional real demo
+> Future work will be driven by real-world usage rather than version-driven feature expansion.
+
+## Contributing
+
+This is a small, focused project. Contributions and issues are welcome; please keep changes small and aligned with the offline-first, deterministic-design philosophy.
+
+## License
+
+No license has been selected for this project yet.
