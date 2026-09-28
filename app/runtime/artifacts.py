@@ -63,6 +63,41 @@ class AgentDeliverable(BaseModel):
     sources: list[str] = Field(default_factory=list)
 
 
+class Source(BaseModel):
+    """A retrievable provenance record. Offline sources have no URL and are
+    always marked ``offline_mock`` — real URLs are never fabricated."""
+
+    id: str
+    title: str = ""
+    url: str = ""
+    source_type: str = "offline_mock"  # "web" | "offline_mock" | "local_file"
+    retrieved_at: str = ""
+
+
+class Evidence(BaseModel):
+    """A claim backed by a registered source. ``source_id`` must exist in the
+    artifact's ``source_records`` (validated by ``app.runtime.validation``)."""
+
+    claim: str
+    evidence: str = ""
+    source_id: str
+
+
+class ToolCall(BaseModel):
+    """Schema for an LLM-requested tool invocation (never free text)."""
+
+    tool_name: str
+    arguments: dict[str, str] = Field(default_factory=dict)
+
+
+class AgentDecision(BaseModel):
+    """One decision round for a real-LLM agent: call a tool, or finish."""
+
+    action: str = "finish"  # "call_tool" | "finish"
+    tool_call: ToolCall | None = None
+    deliverable: AgentDeliverable | None = None
+
+
 class AgentArtifact(BaseModel):
     artifact_id: str
     agent_id: str
@@ -72,6 +107,8 @@ class AgentArtifact(BaseModel):
     content: str = ""  # readable markdown body
     structured_data: dict[str, str] = Field(default_factory=dict)
     sources: list[str] = Field(default_factory=list)
+    source_records: list[Source] = Field(default_factory=list)  # v0.5.0 provenance
+    evidence: list[Evidence] = Field(default_factory=list)  # v0.5.0 claims+refs
     dependencies: list[str] = Field(default_factory=list)  # upstream artifact ids
     created_at: str = ""
     metadata: dict[str, object] = Field(default_factory=dict)

@@ -23,6 +23,7 @@ from app.runtime.dynamic_models import ExecutionPlan
 from app.runtime.dynamic_team import build_dynamic_team
 from app.runtime.events import ExecutionTrace
 from app.runtime.result_store import ResultStore
+from app.runtime.validation import ArtifactValidationError, validate_artifact
 from app.scheduler.models import ExecutionStatus
 from app.scheduler.retry import RetryPolicy
 from app.scheduler.scheduler import AsyncDAGScheduler
@@ -84,6 +85,7 @@ class TaskExecutionSession:
         self.criteria = criteria or CompletionCriteria()
         self.trace = ExecutionTrace(self.run_id)
         self.error: str | None = None
+        self.provider_name: str = "MockLLMProvider"
 
     def agent_names(self) -> dict[str, str]:
         if self.plan is None:
@@ -113,11 +115,16 @@ def execute_task(
     criteria: CompletionCriteria | None = None,
     fail_agent_ids: set[str] | None = None,
     failures_before_success: dict[str, int] | None = None,
+    timeout: float | None = None,
+    max_tool_calls: int = 3,
+    max_iterations: int = 5,
+    provider_fallback: bool = False,
 ) -> TaskExecutionSession:
     """Run one full task session offline-first through the existing engine."""
     session = TaskExecutionSession(task, criteria)
     session.status = SessionStatus.RUNNING
     session.started_at = time.time()
+    session.provider_name = type(provider).__name__ if provider is not None else "MockLLMProvider"
     trace = session.trace
     trace.record("TASK_STARTED", message=task[:200])
 
@@ -149,9 +156,11 @@ def execute_task(
             failures_before_success=failures_before_success,
             trace=trace,
             run_id=session.run_id,
+            max_tool_calls=max_tool_calls,
+            max_iterations=max_iterations,
         )
         scheduler = AsyncDAGScheduler(
-            executor=runtime, retry_policy=RetryPolicy(max_retries=2)
+            executor=runtime, retry_policy=RetryPolicy(max_retries=2), timeout=timeout
         )
         results = asyncio.run(
             scheduler.run(Task(description=task), plan.topology, plan.agents)
@@ -179,6 +188,19 @@ def execute_task(
             if result.status is ExecutionStatus.SUCCESS
             and isinstance(result.output, AgentArtifact)
         ]
+        # Defensive re-validation: nothing rejected reaches the report.
+        valid_artifacts: list[AgentArtifact] = []
+        for artifact in session.artifacts:
+            try:
+                validate_artifact(artifact)
+                valid_artifacts.append(artifact)
+            except ArtifactValidationError as exc:
+                trace.record(
+                    "ARTIFACT_REJECTED",
+                    agent_id=artifact.agent_id,
+                    message=str(exc)[:200],
+                )
+        session.artifacts = valid_artifacts
         session.final_artifact = ArtifactAssembler().assemble(
             task=task,
             artifacts=session.artifacts,
@@ -198,6 +220,37 @@ def execute_task(
     except Exception as exc:
         session.error = str(exc)
         session.status = SessionStatus.FAILED
+
+    # Real-mode resilience: a failing provider (bad key, network) must not crash
+    # the run. The upper layer decides to fall back to the deterministic mock.
+    provider_failed = any(
+        "LLM provider call failed" in (result.error or "")
+        for result in session.agent_results.values()
+    )
+    if (
+        provider_fallback
+        and provider is not None
+        and (provider_failed or session.status is SessionStatus.FAILED)
+        and not isinstance(provider, MockLLMProvider)
+    ):
+        fallback = execute_task(
+            task,
+            provider=None,
+            tool_mode=tool_mode,
+            criteria=criteria,
+            fail_agent_ids=fail_agent_ids,
+            failures_before_success=failures_before_success,
+            timeout=timeout,
+            max_tool_calls=max_tool_calls,
+            max_iterations=max_iterations,
+            provider_fallback=False,
+        )
+        fallback.trace.record(
+            "PROVIDER_FALLBACK",
+            message="real provider failed; rerunning with the deterministic mock",
+        )
+        fallback.final_artifact.metadata["provider_fallback"] = True
+        return fallback
 
     trace.record("TASK_COMPLETED", message=session.status.value)
     session.finished_at = time.time()

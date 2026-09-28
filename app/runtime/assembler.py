@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.runtime.artifacts import AgentArtifact, now_iso
+from app.runtime.artifacts import AgentArtifact, Evidence, Source, now_iso
 
 
 class FinalSection(BaseModel):
@@ -27,6 +27,8 @@ class FinalArtifact(BaseModel):
     summary: str = ""
     sections: list[FinalSection] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+    source_records: list[Source] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
     contributing_agents: list[str] = Field(default_factory=list)
     metadata: dict[str, object] = Field(default_factory=dict)
 
@@ -52,7 +54,25 @@ class FinalArtifact(BaseModel):
                     f"- `{key}` = `{value}`" for key, value in section.structured_data.items()
                 )
                 lines.append("")
-        if self.sources:
+        if self.evidence:
+            lines.extend(["## Evidence", ""])
+            lines.extend(
+                f"- {item.claim} — {item.evidence} (`{item.source_id}`)"
+                for item in self.evidence
+            )
+            lines.append("")
+        if self.source_records:
+            lines.extend(["## Sources", ""])
+            lines.extend(
+                f"{index}. {source.title or source.id} "
+                f"({source.source_type}{', ' + source.url if source.url else ''})"
+                for index, source in enumerate(self.source_records, start=1)
+            )
+            lines.append("")
+            if all(source.source_type == "offline_mock" for source in self.source_records):
+                lines.append("> Data source: offline_mock (deterministic stubs, no live web).")
+                lines.append("")
+        elif self.sources:
             lines.extend(["## Sources", ""])
             lines.extend(f"- {source}" for source in self.sources)
             lines.append("")
@@ -105,11 +125,22 @@ class ArtifactAssembler:
             for source in artifact.sources:
                 if source not in sources:
                     sources.append(source)
+        source_records: list[Source] = []
+        seen_ids: set[str] = set()
+        evidence: list[Evidence] = []
+        for artifact in ordered:
+            for record in artifact.source_records:
+                if record.id not in seen_ids:
+                    seen_ids.add(record.id)
+                    source_records.append(record)
+            evidence.extend(artifact.evidence)
         return FinalArtifact(
             title=f"Final Deliverable — {task}",
             summary=summary,
             sections=sections,
             sources=sources,
+            source_records=source_records,
+            evidence=evidence,
             contributing_agents=[artifact.agent_id for artifact in ordered],
             metadata=meta,
         )

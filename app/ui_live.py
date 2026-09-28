@@ -79,11 +79,16 @@ def _render_artifacts(session) -> None:
     names = session.agent_names()
     for artifact in session.artifacts:
         deps = ", ".join(artifact.dependencies) or "—"
+        tools_used = ", ".join(artifact.metadata.get("tools_used", []) or []) or "—"
         with st.expander(
             f"**{artifact.title}** ({artifact.output_type.value}) by "
             f"{names.get(artifact.agent_id, artifact.agent_id)}"
         ):
             st.markdown(f"- 依赖上游: `{deps}`")
+            st.markdown(f"- Tools: {tools_used}")
+            st.markdown(
+                f"- Sources: {len(artifact.source_records)} · Evidence: {len(artifact.evidence)}"
+            )
             st.markdown(
                 "- 关键数据: "
                 + ", ".join(f"`{k}={v}`" for k, v in artifact.structured_data.items())
@@ -154,6 +159,11 @@ def main() -> None:
         st.rerun()
 
     st.markdown(f"**Run**: `{session.run_id}` · **Status**: {session.status.value.upper()}")
+    st.markdown(
+        f"**Execution Mode**: "
+        f"{'Real LLM' if session.provider_name != 'MockLLMProvider' else 'Mock (offline)'}"
+        f" · **Provider**: `{session.provider_name}`"
+    )
     _render_team(session)
     _render_live(session)
     _render_trace(session)

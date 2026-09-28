@@ -22,12 +22,15 @@ from typing import Any, Callable
 
 from pydantic import BaseModel
 
-from app.llm.provider import LLMProvider, MockLLMProvider
+from app.llm.provider import LLMProvider, MockLLMProvider, ProviderError  # noqa: F401
 from app.models.agent import AgentSpec
 from app.models.task import Task
 from app.runtime.artifacts import (
     AgentArtifact,
+    AgentDecision,
     AgentDeliverable,
+    Evidence,
+    Source,
     artifact_type_for,
     now_iso,
 )
@@ -40,8 +43,9 @@ from app.runtime.models import (
     TechnologyFindings,
 )
 from app.runtime.result_store import ResultStore, RunEvent
+from app.runtime.validation import validate_artifact
 from app.scheduler.models import ExecutionContext
-from app.tools.registry import ToolRegistry
+from app.tools.registry import ToolError, ToolRegistry, ToolResult
 
 
 def _market_prompt(task: Task, role: str, upstream: str, tools: str) -> str:
@@ -158,6 +162,8 @@ class AgentRuntime:
         failures_before_success: dict[str, int] | None = None,
         trace: ExecutionTrace | None = None,
         run_id: str = "",
+        max_tool_calls: int = 3,
+        max_iterations: int = 5,
     ) -> None:
         self.provider = provider or MockLLMProvider()
         self.tool_registry = tool_registry or ToolRegistry(mode="auto")
@@ -167,6 +173,8 @@ class AgentRuntime:
         self.failures_before_success = dict(failures_before_success or {})
         self.trace = trace
         self.run_id = run_id
+        self.max_tool_calls = max_tool_calls
+        self.max_iterations = max_iterations
         self.call_counts: dict[str, int] = {}
 
     @staticmethod
@@ -189,25 +197,146 @@ class AgentRuntime:
                 parts.append(f"[{source_id}] {output}")
         return ("\n\nUpstream inputs:\n" + "\n\n".join(parts) + "\n\n") if parts else ""
 
-    def _run_tools(self, tool_names: list[str], task: Task, agent_id: str = "") -> str:
-        blocks: list[str] = []
+    def _invoke_tools(
+        self, tool_names: list[str], task: Task, agent_id: str = ""
+    ) -> list[ToolResult]:
+        """Run tools and return structured results (never raises)."""
+        results: list[ToolResult] = []
         for tool_name in tool_names:
             try:
                 result = self.tool_registry.run(tool_name, task.description)
-                label = "offline mock" if result.offline else "web"
-                items = "\n".join(f"- {item}" for item in result.results) or "- (no results)"
-                blocks.append(f"[{tool_name} ({label})]\n{items}")
+            except Exception as exc:  # defensive: run() already catches, but stay safe
+                result = ToolResult(query=task.description, offline=True, error=str(exc))
+            results.append(result)
+            label = "offline mock" if result.offline else "web"
+            if self.trace is not None:
+                self.trace.record(
+                    "TOOL_CALLED",
+                    agent_id=agent_id,
+                    message=f"{tool_name} ({label})",
+                    tool=tool_name,
+                    offline=result.offline,
+                    error=result.error or "",
+                )
+        return results
+
+    def _format_tool_blocks(self, results: list[ToolResult]) -> str:
+        blocks: list[str] = []
+        for result in results:
+            tool_name = result.tool or "tool"
+            label = "offline mock" if result.offline else "web"
+            items = "\n".join(f"- {item}" for item in result.results) or "- (no results)"
+            error = f"\n- error: {result.error}" if result.error else ""
+            blocks.append(f"[{tool_name} ({label})]\n{items}{error}")
+        return ("\n\nTool results:\n" + "\n\n".join(blocks) + "\n\n") if blocks else ""
+
+    def _run_tools(self, tool_names: list[str], task: Task, agent_id: str = "") -> str:
+        return self._format_tool_blocks(self._invoke_tools(tool_names, task, agent_id))
+
+    def _collect_evidence(
+        self, collected: list[ToolResult], deliverable: AgentDeliverable
+    ) -> tuple[list[Source], list[Evidence]]:
+        """Deterministic provenance: sources come only from real tool results;
+        each key point is linked to a retrieved snippet. Nothing is invented —
+        offline tool results are marked ``offline_mock`` with empty URLs."""
+        sources: list[Source] = []
+        snippets: list[str] = []
+        for result in collected:
+            for item in result.search_results:
+                sources.append(
+                    Source(
+                        id=f"source_{len(sources) + 1:03d}",
+                        title=item.title,
+                        url=item.url,
+                        source_type="offline_mock" if result.offline else item.source,
+                        retrieved_at=now_iso(),
+                    )
+                )
+                snippets.append(item.snippet)
+        evidence: list[Evidence] = []
+        if sources:
+            for index, point in enumerate(deliverable.key_points):
+                source = sources[index % len(sources)]
+                evidence.append(
+                    Evidence(
+                        claim=point[:200],
+                        evidence=snippets[index % len(snippets)],
+                        source_id=source.id,
+                    )
+                )
+        return sources, evidence
+
+    def _real_execution(
+        self, agent: AgentSpec, agent_context, task: Task
+    ) -> tuple[AgentDeliverable, list[Source], list[Evidence], list[str]]:
+        """Real-LLM tool-calling loop: the LLM decides between calling a
+        registered tool (schema: ToolCall) and finishing with a deliverable.
+        Bounded by max_tool_calls / max_iterations; tool failures become
+        structured ToolResults fed back into the prompt — never crashes."""
+        agent_id = agent.id or "unknown"
+        collected: list[ToolResult] = []
+        used_tools: list[str] = []
+        base_prompt = self._artifact_prompt(agent_context, task, "")
+        available = ", ".join(self.tool_registry.available())
+        deliverable: AgentDeliverable | None = None
+        for _ in range(self.max_iterations):
+            decision_prompt = (
+                base_prompt
+                + self._format_decision_results(collected)
+                + f"\nAvailable tools: {available}\n"
+                "Decide the next step. Return JSON matching AgentDecision: "
+                "either action='call_tool' with tool_call{tool_name, arguments} "
+                "(arguments must include the required keys for that tool), "
+                "or action='finish' with deliverable{title, summary, key_points, "
+                "structured_data, sources}. Cite only tool-provided information."
+            )
+            decision = self.provider.structured_completion(decision_prompt, AgentDecision)
+            if decision.action == "call_tool" and decision.tool_call is not None:
+                if len(collected) >= self.max_tool_calls:
+                    break  # tool budget exhausted — synthesize partial below
+                tool_name = decision.tool_call.tool_name
+                try:
+                    self.tool_registry.validate(tool_name)
+                    result = self.tool_registry.execute(
+                        tool_name, dict(decision.tool_call.arguments)
+                    )
+                except ToolError as exc:
+                    result = ToolResult(query=tool_name, offline=True, error=str(exc))
+                collected.append(result)
+                used_tools.append(tool_name)
                 if self.trace is not None:
                     self.trace.record(
                         "TOOL_CALLED",
                         agent_id=agent_id,
-                        message=f"{tool_name} ({label})",
+                        message=f"{tool_name} via tool-call",
                         tool=tool_name,
-                        offline=result.offline,
+                        error=result.error or "",
                     )
-            except Exception as exc:  # tool failure must not kill the agent
-                blocks.append(f"[{tool_name}] error: {exc}")
-        return ("\n\nTool results:\n" + "\n\n".join(blocks) + "\n\n") if blocks else ""
+                continue
+            deliverable = decision.deliverable or AgentDeliverable(
+                summary="[real mode] decision without deliverable"
+            )
+            break
+        if deliverable is None:  # budget/iteration limit reached
+            deliverable = AgentDeliverable(
+                title=f"{agent.role.name} — partial deliverable",
+                summary="[real mode] tool/iteration budget reached; partial results only.",
+                key_points=[
+                    item for result in collected for item in result.results
+                ][:3],
+            )
+        sources, evidence = self._collect_evidence(collected, deliverable)
+        return deliverable, sources, evidence, used_tools
+
+    @staticmethod
+    def _format_decision_results(collected: list[ToolResult]) -> str:
+        if not collected:
+            return "\nTool results so far: (none)\n"
+        lines = []
+        for result in collected:
+            status = f"error: {result.error}" if result.error else "; ".join(result.results)
+            lines.append(f"- {status}")
+        return "\nTool results so far:\n" + "\n".join(lines) + "\n"
 
     def _dynamic_prompt(self, agent: AgentSpec, task: Task, upstream: str, tools: str) -> str:
         system_prompt = getattr(agent, "system_prompt", "") or f"You are {agent.role.name}."
@@ -251,6 +380,9 @@ class AgentRuntime:
         agent_context,
         deliverable: AgentDeliverable,
         task: Task,
+        source_records: list[Source] | None = None,
+        evidence: list[Evidence] | None = None,
+        tools_used: list[str] | None = None,
     ) -> AgentArtifact:
         agent_id = agent.id or "unknown"
         artifact = AgentArtifact(
@@ -265,6 +397,8 @@ class AgentRuntime:
             ),
             structured_data=dict(deliverable.structured_data),
             sources=list(deliverable.sources),
+            source_records=list(source_records or []),
+            evidence=list(evidence or []),
             dependencies=list(agent_context.upstream_artifact_ids),
             created_at=now_iso(),
             metadata={
@@ -273,8 +407,11 @@ class AgentRuntime:
                 else "llm",
                 "role_name": agent.role.name,
                 "output_type_declared": agent_context.output_type,
+                "tools_used": list(tools_used or []),
             },
         )
+        # v0.5.0: nothing invalid reaches downstream agents or the report.
+        validate_artifact(artifact)
         if self.trace is not None:
             self.trace.record(
                 "AGENT_OUTPUT",
@@ -329,10 +466,31 @@ class AgentRuntime:
             upstream_text = self._format_upstream(upstream)
             if use_artifacts:
                 agent_context = assemble_agent_context(agent, context)
-                tool_text = self._run_tools(list(agent.tools), context.task, agent_id)
-                prompt = self._artifact_prompt(agent_context, context.task, tool_text)
-                output = self.provider.structured_completion(prompt, AgentDeliverable)
-                output = self._build_artifact(agent, agent_context, output, context.task)
+                collected = self._invoke_tools(list(agent.tools), context.task, agent_id)
+                tool_text = self._format_tool_blocks(collected)
+                if isinstance(self.provider, MockLLMProvider):
+                    # Offline mode: deterministic deliverable + stub evidence.
+                    prompt = self._artifact_prompt(agent_context, context.task, tool_text)
+                    deliverable = self.provider.structured_completion(prompt, AgentDeliverable)
+                    sources, evidence = self._collect_evidence(collected, deliverable)
+                    tools_used = list(agent.tools)
+                else:
+                    # Real mode: LLM-driven tool-calling loop (bounded).
+                    (
+                        deliverable,
+                        sources,
+                        evidence,
+                        tools_used,
+                    ) = self._real_execution(agent, agent_context, context.task)
+                output = self._build_artifact(
+                    agent,
+                    agent_context,
+                    deliverable,
+                    context.task,
+                    source_records=sources,
+                    evidence=evidence,
+                    tools_used=tools_used,
+                )
             elif use_dynamic:
                 output_model = dynamic_model
                 tool_text = self._run_tools(list(agent.tools), context.task, agent_id)

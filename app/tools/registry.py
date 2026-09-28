@@ -1,14 +1,22 @@
-"""Research tools and their registry (v0.2.0).
+"""Research tools and their registry.
 
-Two tools ship: ``web_search`` and ``mock_search``.
+v0.5.0: tools are now truly executable and structured.
 
-``web_search`` is offline-safe: without a configured search backend it returns
-clearly-labeled offline results, so the whole research demo runs with no API key.
-Wire a real backend by setting ``AUTOTEAM_WEB_SEARCH_URL`` + ``AUTOTEAM_WEB_SEARCH_API_KEY``.
-``mock_search`` always returns deterministic stubs and is what the offline demo uses.
+- ``web_search`` — dual mode. Without ``AUTOTEAM_WEB_SEARCH_URL`` +
+  ``AUTOTEAM_WEB_SEARCH_API_KEY`` it returns deterministic results clearly
+  labeled ``offline_mock`` (never fake URLs). With both configured it performs
+  a real HTTP call (timeout, structured errors, response validation; the key
+  never appears in results or logs).
+- ``calculator`` — safe AST-based arithmetic (``app.tools.calculator``), no eval.
+- ``local_knowledge`` — controlled reads from the knowledge workspace
+  (``app.tools.local_knowledge``).
+- ``mock_search`` / ``data_analyzer`` / ``schema_validator`` / ``code_analysis``
+  — deterministic offline stubs used by the offline demos.
 
-The runtime picks the tool via the registry ``mode`` ("auto" resolves to the
-behavior-declared tool, "mock" forces the deterministic stub).
+Structured interface: ``validate(tool_name)`` raises ``ToolNotFound``;
+``execute(tool_name, arguments)`` raises ``ToolValidationError`` /
+``ToolExecutionError`` and otherwise returns a ``ToolResult``. The legacy
+``run(tool_name, query)`` is kept unchanged for the v0.2-v0.4 paths.
 """
 
 from __future__ import annotations
@@ -17,11 +25,48 @@ import os
 
 from pydantic import BaseModel, Field
 
+from app.tools.calculator import safe_calculate
+from app.tools.local_knowledge import search_knowledge
+
+
+class SearchResult(BaseModel):
+    title: str = ""
+    url: str = ""  # empty is allowed for offline_mock sources — never faked
+    snippet: str = ""
+    source: str = "offline_mock"  # "web" | "offline_mock"
+
+
+class SearchResults(BaseModel):
+    query: str
+    results: list[SearchResult] = Field(default_factory=list)
+    offline: bool = True
+    error: str | None = None
+
 
 class ToolResult(BaseModel):
     query: str
+    tool: str = ""
     results: list[str] = Field(default_factory=list)
     offline: bool = True
+    value: float | None = None  # calculator
+    search_results: list[SearchResult] = Field(default_factory=list)
+    error: str | None = None
+
+
+class ToolError(Exception):
+    """Base class for structured tool failures."""
+
+
+class ToolNotFound(ToolError):
+    pass
+
+
+class ToolValidationError(ToolError):
+    pass
+
+
+class ToolExecutionError(ToolError):
+    pass
 
 
 def mock_search(query: str) -> ToolResult:
@@ -37,13 +82,15 @@ def mock_search(query: str) -> ToolResult:
 
 
 def calculator(query: str) -> ToolResult:
+    """``query`` is the arithmetic expression (e.g. ``(100 - 20) / 4``)."""
+    outcome = safe_calculate(query)
+    if outcome.error:
+        return ToolResult(query=query, offline=True, error=outcome.error)
     return ToolResult(
         query=query,
         offline=True,
-        results=[
-            f"[calculator] deterministic sizing metrics computed for '{query}'.",
-            "[calculator] offline stub — no live computation backend configured.",
-        ],
+        value=outcome.value,
+        results=[f"[calculator] {outcome.expression} = {outcome.value}"],
     )
 
 
@@ -81,8 +128,38 @@ def code_analysis(query: str) -> ToolResult:
     )
 
 
+def _offline_web_results(query: str) -> list[SearchResult]:
+    return [
+        SearchResult(
+            title=f"[offline_mock] overview of '{query}'",
+            url="",
+            snippet=f"offline deterministic stub about '{query}' — market size and growth drivers.",
+            source="offline_mock",
+        ),
+        SearchResult(
+            title=f"[offline_mock] key players for '{query}'",
+            url="",
+            snippet=f"offline deterministic stub about '{query}' — key players and positioning.",
+            source="offline_mock",
+        ),
+        SearchResult(
+            title=f"[offline_mock] recent signals for '{query}'",
+            url="",
+            snippet=f"offline deterministic stub about '{query}' — recent developments.",
+            source="offline_mock",
+        ),
+    ]
+
+
 def web_search(query: str) -> ToolResult:
-    """Offline-safe web search: real backend if configured, else mock fallback."""
+    """Dual-mode web search.
+
+    Offline (default): deterministic results, ``source_type=offline_mock``,
+    empty URLs — real URLs are never fabricated. Real: one HTTP GET against
+    ``AUTOTEAM_WEB_SEARCH_URL`` with ``AUTOTEAM_WEB_SEARCH_API_KEY``; any
+    failure (timeout, bad response, validation) degrades to the offline
+    results plus a structured ``error`` — never a crash, never the API key.
+    """
     api_key = os.getenv("AUTOTEAM_WEB_SEARCH_API_KEY")
     base_url = os.getenv("AUTOTEAM_WEB_SEARCH_URL")
     if api_key and base_url:
@@ -97,15 +174,67 @@ def web_search(query: str) -> ToolResult:
             )
             with urllib.request.urlopen(request, timeout=10) as response:
                 data = _json.loads(response.read().decode())
-                items = [str(item) for item in data.get("results", [])[:5]]
-                if items:
-                    return ToolResult(query=query, offline=False, results=items)
-        except Exception:
-            pass
-    # Offline fallback (deterministic, explicitly labeled).
-    result = mock_search(query)
-    result.offline = True
-    return result
+            raw_items = data.get("results") if isinstance(data, dict) else None
+            if not isinstance(raw_items, list):
+                raise ValueError("response must contain a 'results' list")
+            search_results: list[SearchResult] = []
+            for item in raw_items[:5]:
+                if not isinstance(item, dict) or not isinstance(item.get("url"), str):
+                    raise ValueError("each result must be an object with a 'url' string")
+                search_results.append(
+                    SearchResult(
+                        title=str(item.get("title", "")),
+                        url=item["url"],
+                        snippet=str(item.get("snippet", "")),
+                        source="web",
+                    )
+                )
+            if not search_results:
+                raise ValueError("empty search response")
+            return ToolResult(
+                query=query,
+                offline=False,
+                results=[item.snippet for item in search_results],
+                search_results=search_results,
+            )
+        except Exception as exc:
+            fallback = _offline_web_results(query)
+            return ToolResult(
+                query=query,
+                offline=True,
+                results=[item.snippet for item in fallback],
+                search_results=fallback,
+                error=f"web search failed: {type(exc).__name__}",
+            )
+    offline = _offline_web_results(query)
+    return ToolResult(
+        query=query,
+        offline=True,
+        results=[item.snippet for item in offline],
+        search_results=offline,
+    )
+
+
+def local_knowledge(query: str) -> ToolResult:
+    outcome = search_knowledge(query)
+    if outcome.error and not outcome.matches:
+        return ToolResult(query=query, offline=True, results=[], error=outcome.error)
+    results = [f"[knowledge:{match['file']}] {match['snippet']}" for match in outcome.matches]
+    if not results:
+        results = [f"[knowledge] no files matched '{query}' (offline workspace)"]
+    return ToolResult(query=query, offline=True, results=results)
+
+
+# Required argument names per tool — used by ToolRegistry.execute validation.
+REQUIRED_ARGUMENTS: dict[str, tuple[str, ...]] = {
+    "web_search": ("query",),
+    "mock_search": ("query",),
+    "calculator": ("expression",),
+    "data_analyzer": ("query",),
+    "schema_validator": ("query",),
+    "code_analysis": ("query",),
+    "local_knowledge": ("query",),
+}
 
 
 class ToolRegistry:
@@ -118,16 +247,61 @@ class ToolRegistry:
             "data_analyzer": data_analyzer,
             "schema_validator": schema_validator,
             "code_analysis": code_analysis,
+            "local_knowledge": local_knowledge,
         }
 
     def available(self) -> list[str]:
         return list(self._tools)
 
+    def validate(self, tool_name: str) -> None:
+        """Raise ``ToolNotFound`` if the tool is not registered."""
+        if tool_name not in self._tools:
+            raise ToolNotFound(f"tool '{tool_name}' is not registered")
+
+    def execute(self, tool_name: str, arguments: dict[str, str]) -> ToolResult:
+        """Structured execution: validate the tool and its arguments, then run.
+
+        Argument problems raise ``ToolValidationError``; internal tool failures
+        raise ``ToolExecutionError``. Both are caught by the agent runtime and
+        converted into structured ``ToolResult``s.
+        """
+        self.validate(tool_name)
+        required = REQUIRED_ARGUMENTS.get(tool_name, ("query",))
+        for name in required:
+            value = arguments.get(name)
+            if not isinstance(value, str) or not value.strip():
+                raise ToolValidationError(
+                    f"tool '{tool_name}' requires a non-empty '{name}' argument"
+                )
+        try:
+            impl = self._tools[tool_name]
+            if tool_name == "calculator":
+                outcome = impl(arguments["expression"])
+            else:
+                outcome = impl(arguments["query"])
+            outcome.tool = tool_name
+            return outcome
+        except ToolError:
+            raise
+        except Exception as exc:
+            raise ToolExecutionError(f"tool '{tool_name}' failed: {type(exc).__name__}") from exc
+
     def run(self, tool_name: str, query: str) -> ToolResult:
+        """Legacy entry point (v0.2-v0.4 paths). Never raises."""
         if self.mode == "mock":
             impl = self._tools.get("mock_search")
         else:
             impl = self._tools.get(tool_name) or self._tools.get("mock_search")
         if impl is None:
-            return ToolResult(query=query, results=[], offline=True)
-        return impl(query)
+            return ToolResult(query=query, tool=tool_name, results=[], offline=True)
+        try:
+            if impl is calculator:
+                result = calculator(query)
+            else:
+                result = impl(query)
+            result.tool = tool_name
+            return result
+        except Exception as exc:
+            return ToolResult(
+                query=query, tool=tool_name, offline=True, error=f"{type(exc).__name__}: {exc}"
+            )

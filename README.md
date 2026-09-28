@@ -6,7 +6,7 @@
 
 > AutoTeam dynamically forms agent teams, generates validated collaboration topologies, executes them asynchronously, recovers from failures, and evaluates topology behavior.
 
-**Status: v0.1.0 released; v0.2.0 (AutoTeam Research), v0.3.0 (Dynamic Team Intelligence) and v0.4.0 (Autonomous Task Completion) layered on top.** AutoTeam is an offline deterministic demo built to make multi-agent orchestration structure visible and testable. It is not a production agent runtime, not a hosted service, and not a real-world LLM benchmark. See [Limitations](#limitations).
+**Status: v0.1.0 released; v0.2.0 (AutoTeam Research), v0.3.0 (Dynamic Team Intelligence), v0.4.0 (Autonomous Task Completion) and v0.5.0 (Real-World Agent Execution) layered on top.** AutoTeam is an offline deterministic demo built to make multi-agent orchestration structure visible and testable. It is not a production agent runtime, not a hosted service, and not a real-world LLM benchmark. See [Limitations](#limitations).
 
 ### How it works in one paragraph
 
@@ -426,6 +426,47 @@ Prints the run id, dynamic team, execution layers, per-agent results, the artifa
 
 ---
 
+## Real-World Agent Execution (v0.5.0)
+
+v0.4.0 proved the offline team collaborates to a deliverable. v0.5.0 upgrades those verified mechanics from offline mock to **real execution**: a real LLM driver, real tool use (web search / calculator / local knowledge), and evidence-backed structured artifacts with deterministic validation — while keeping v0.4.0's scheduler, retry, replan, dynamic team and artifact assembly untouched.
+
+```
+Task → Dynamic Team → Agent → Real/Mock LLM → Tool Use (web_search, calculator,
+     local_knowledge) → Structured Artifact → Evidence/Sources → Artifact Validation
+     → Agent Collaboration → Final Deliverable
+```
+
+### What is new
+
+| Module | Responsibility |
+|---|---|
+| `app/llm/provider.py` | `LLMProvider` + `ProviderError`. `MockLLMProvider` (offline), `OpenAILLMProvider` (OpenAI/DeepSeek-compatible), `get_llm_provider()` auto-resolves mock when no key. Provider errors never leak the API key. |
+| `app/tools/registry.py` | Executable `ToolRegistry` with `validate()` / `execute()` returning structured `ToolResult`; `SearchResult`/`SearchResults`; structured errors `ToolNotFound` / `ToolValidationError` / `ToolExecutionError`. |
+| `app/tools/calculator.py` | Safe AST-based arithmetic — no `eval`. |
+| `app/tools/local_knowledge.py` | Controlled reads of `.md/.txt/.json/.csv` inside one workspace; rejects path traversal, secrets, disallowed extensions. |
+| `app/runtime/artifacts.py` | `Source` / `Evidence` / `ToolCall` / `AgentDecision`; `AgentArtifact` grows `source_records` + `evidence`. |
+| `app/runtime/validation.py` | Deterministic validation: schema, evidence→source references, http(s) URLs — no LLM judge. |
+| `app/runtime/agent_runtime.py` | Real-mode tool-calling loop (bounded by `max_tool_calls` / `max_iterations`); offline path unchanged. |
+| `examples/real_world_demo.py` | One demo, two modes (offline / real). |
+| `app/ui_live.py` | Minimal Live View additions: execution mode, tools used, sources, evidence. |
+
+### Dual mode
+
+- **Offline mode (default)** — no API key. `web_search` returns deterministic results labeled `offline_mock` with **empty URLs** (real URLs are never fabricated); sources/evidence are marked `offline_mock`. `python examples/real_world_demo.py` and `pytest -q` run fully offline.
+- **Real mode (optional)** — set `AUTOTEAM_API_KEY` (+ optionally `AUTOTEAM_LLM_PROVIDER`, `AUTOTEAM_LLM_BASE_URL`, `AUTOTEAM_LLM_MODEL`) for a real LLM; set `AUTOTEAM_WEB_SEARCH_URL` + `AUTOTEAM_WEB_SEARCH_API_KEY` for real web search. A real search failure degrades to structured offline results instead of crashing. Real mode is **not** exercised by CI or tests.
+
+### Evidence / no fabrication
+
+Artifacts carry provenance: every `Evidence` references a `Source` that exists, and every source is either a real tool result (web) or explicitly `offline_mock` with no URL. Nothing is invented; artifact validation rejects broken references and non-http URLs deterministically before downstream use.
+
+### Killer Demo
+
+```bash
+python examples/real_world_demo.py   # offline mode (no API key)
+```
+
+---
+
 ## Quick Start
 
 ```bash
@@ -478,12 +519,12 @@ app/
 ├── topology/      Templates, generator, DAG validator
 ├── scheduler/     Async DAG scheduler, retry, replan, mock executor
 ├── evaluation/    Metrics collector, policy, evaluator, benchmark
-├── runtime/       v0.2.0 research runtime + v0.3.0 dynamic team + v0.4.0 session/artifacts/assembler/context/events
-├── tools/         ToolRegistry: web_search, mock_search, calculator, data_analyzer, schema_validator, code_analysis
+├── runtime/       v0.2.0 research runtime + v0.3.0 dynamic team + v0.4.0 session/artifacts/assembler/context/events + v0.5.0 validation + Source/Evidence
+├── tools/         Executable ToolRegistry: web_search (offline/real), calculator (safe AST), local_knowledge, mock_search, data_analyzer, schema_validator, code_analysis
 ├── demo/          Presentation layer: tasks, service, render, Streamlit page
 ├── config.py
 ├── ui.py          Streamlit entry point (v0.1.0)
-├── ui_live.py     Streamlit "AI Team Live View" (v0.2.0, upgraded in v0.4.0 with artifacts + final deliverable)
+├── ui_live.py     Streamlit "AI Team Live View" (v0.2.0, upgraded in v0.4.0/v0.5.0 with artifacts, mode, tools, sources, evidence)
 └── ui_dynamic.py  Streamlit "Dynamic Team" view (v0.3.0)
 
 examples/
@@ -493,7 +534,8 @@ examples/
 ├── recovery_demo.py
 ├── evaluation_demo.py
 ├── dynamic_team_demo.py
-└── autonomous_task_demo.py
+├── autonomous_task_demo.py
+└── real_world_demo.py   (v0.5.0 — offline by default, optional real LLM/web search)
 
 tests/
 .github/
@@ -513,7 +555,7 @@ ruff check .
 ```
 
 ```
-Tests: 138 passed
+Tests: 174 passed
 Ruff:  PASS
 CI:    Python 3.11 / 3.12
 ```
@@ -523,6 +565,7 @@ CI:    Python 3.11 / 3.12
 - v0.2.0: 11 tests (`tests/test_research.py` — decomposition, runtime, providers, tools, result passing, report aggregation, failure/recovery, offline run)
 - v0.3.0: 28 tests (`tests/test_dynamic_team.py` — understanding, capability discovery, dynamic decomposition, role allocation, agent factory, tool selection, dependency analysis incl. cycle/missing/self detection, execution plan, multi-task differentiation, offline E2E, UI)
 - v0.4.0: 28 tests (`tests/test_autonomous.py` — session lifecycle, artifacts, context assembly, the downstream-receives-upstream collaboration proof, artifact dependency chains, assembler, completion criteria, event trace, retry/replan integration, partial failure, three task types, Killer Demo path, UI)
+- v0.5.0: 36 tests (`tests/test_realworld.py` — provider/mock/error/fallback, calculator safety, dual-mode web search + real adapter validation, local knowledge + path-traversal rejection, structured tool calling + limits, Source/Evidence + reference validation, artifact validation, evidence flow into the final deliverable, offline real-world demo, API-key non-leak)
 
 `tests/test_ui.py` deliberately does not assert Streamlit HTML details. CI runs ruff, pytest, a UI import smoke test and the offline demos on Python 3.11 and 3.12 — no API key, no network, no external service.
 
@@ -570,3 +613,4 @@ Directions, not commitments:
 - [x] v0.2.0 — AutoTeam Research: real Agent Runtime on top of the engine (TaskDecomposer, LLM provider, ToolRegistry, ResultStore, ResearchReport, Live View)
 - [x] v0.3.0 — Dynamic Team Intelligence: Task → Capability → Role → Agent → Tool → Dependency → Execution Plan (three differentiated offline demos)
 - [x] v0.4.0 — Autonomous Task Completion: agent collaboration via upstream artifacts, artifact assembly into a readable final deliverable, deterministic completion criteria, execution trace, failure/retry/replan demos
+- [x] v0.5.0 — Real-World Agent Execution: real/mock LLM provider with auto-fallback, executable ToolRegistry (web_search dual-mode / calculator / local knowledge), structured tool calling with limits, Source/Evidence provenance, deterministic artifact + evidence validation, evidence-backed final deliverable, offline + optional real demo

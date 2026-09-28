@@ -25,6 +25,15 @@ class LLMProvider(Protocol):
         ...
 
 
+class ProviderError(RuntimeError):
+    """A real provider call failed (auth, network, rate limit, bad response).
+
+    The message intentionally contains only the exception type — never the API
+    key, request headers or raw response. Callers decide whether to fall back
+    to the mock provider or fail the run.
+    """
+
+
 class MockLLMProvider:
     """Deterministic, offline provider.
 
@@ -51,21 +60,26 @@ class OpenAILLMProvider:
         self.model = model
 
     def structured_completion(self, prompt: str, response_model: type[BaseModel]) -> BaseModel:
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Return only valid JSON matching the requested schema.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            response_format={"type": "json_object"},
-        )
-        content = response.choices[0].message.content
-        if not content:
-            raise ValueError("LLM returned an empty response.")
-        return response_model.model_validate(json.loads(content))
+        try:
+            response = self._client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return only valid JSON matching the requested schema.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+            )
+            content = response.choices[0].message.content
+            if not content:
+                raise ValueError("LLM returned an empty response.")
+            return response_model.model_validate(json.loads(content))
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(f"LLM provider call failed: {type(exc).__name__}") from exc
 
 
 def get_llm_provider() -> LLMProvider:
