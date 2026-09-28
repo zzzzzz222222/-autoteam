@@ -6,7 +6,7 @@
 
 > AutoTeam dynamically forms agent teams, generates validated collaboration topologies, executes them asynchronously, recovers from failures, and evaluates topology behavior.
 
-**Status: v0.1.0 — engineering prototype.** AutoTeam is an offline deterministic demo built to make multi-agent orchestration structure visible and testable. It is not a production agent runtime, not a hosted service, and not a real-world LLM benchmark. See [Limitations](#limitations).
+**Status: v0.1.0 released; v0.2.0 (AutoTeam Research) layered on top.** AutoTeam is an offline deterministic demo built to make multi-agent orchestration structure visible and testable. It is not a production agent runtime, not a hosted service, and not a real-world LLM benchmark. See [Limitations](#limitations).
 
 ### How it works in one paragraph
 
@@ -267,6 +267,78 @@ Demo task results depend on the current capability vocabulary and the rule-based
 
 ---
 
+## AutoTeam Research (v0.2.0)
+
+v0.2.0 is a **killer-demo layer on top of the stable v0.1.0 engine**. It does not rewrite the orchestration engine — it adds a real agent runtime, task decomposition, research tools, and result aggregation that sit *above* `AsyncDAGScheduler`.
+
+The same core principle still holds: **the LLM proposes, the schema constrains, the code validates, and the scheduler executes.**
+
+### What it does
+
+Give it a research task. It:
+
+1. **Decomposes** the task into a schema-constrained `SubtaskPlan` (a planner role)
+2. **Forms a team** — one agent per subtask (Research Agent / Competitor Analyst / Technology Analyst / Report Writer), derived directly from the plan
+3. **Builds a collaboration DAG** — edges follow each subtask's `depends_on`; the plan's fan-in structure becomes parallel layers
+4. **Executes** it through the **unchanged** `AsyncDAGScheduler` with the new `AgentRuntime` executor (so retry / replan / evaluation apply automatically)
+5. **Passes results between agents** — each agent reads its upstream siblings via `ExecutionContext.get_upstream_results`
+6. **Aggregates** the structured outputs into a final `ResearchReport`
+
+### Architecture overlay (v0.2.0)
+
+```
+User Task
+   │
+   ▼
+Task Decomposer (LLMProvider)        SubtaskPlan  (schema-constrained proposal)
+   │
+   ▼
+build_team / build_topology          AgentSpec[] + DAG  (derived from the plan)
+   │
+   ▼
+Async DAG Scheduler  ◄────────────── AgentRuntime (AgentExecutor Protocol)
+   │                                   ├── reads upstream results
+   ├── Retry / Replan (unchanged)      ├── calls ToolRegistry (web_search / mock_search)
+   │                                   └── returns a Pydantic model → AgentResult.output
+   ▼
+Aggregator (build_report)            ResearchReport  (code validates + combines)
+   │
+   ▼
+Streamlit "AI Team Live View"        app/ui_live.py  (live agent status + report)
+```
+
+### Run the Live View
+
+```bash
+streamlit run app/ui_live.py
+```
+
+The page renders the decomposition, the team/topology, a **live per-agent status** panel (pending → running → success/failed/skipped) as the background pipeline runs, and the final report. It runs **fully offline** by default — no API key.
+
+### Offline by default, real LLM optional
+
+| Env var | Purpose | Default |
+|---|---|---|
+| `AUTOTEAM_LLM_PROVIDER` | `mock` (offline) or `openai` / `deepseek` | `mock` |
+| `AUTOTEAM_API_KEY` | API key for a real provider | _none → falls back to mock_ |
+| `AUTOTEAM_LLM_MODEL` | Model id (e.g. `deepseek-chat`) | provider default |
+| `AUTOTEAM_LLM_BASE_URL` | OpenAI-compatible base URL | DeepSeek endpoint |
+| `AUTOTEAM_WEB_SEARCH_URL` / `AUTOTEAM_WEB_SEARCH_API_KEY` | real web search backend | _none → offline mock search_ |
+
+Without any key, the demo uses `MockLLMProvider` (deterministic structured stubs) and `mock_search`, so the entire research pipeline runs with no network.
+
+### Offline example output
+
+For a task like *"分析中国跨境电商 SaaS 市场的竞争格局与技术趋势"* the offline pipeline produces:
+
+- **Team:** `research_agent`, `competitor_analyst`, `technology_analyst`, `report_writer`
+- **Topology:** 2 parallel layers — `[research, competitor, technology]` → `[report_writer]`
+- **Report:** aggregated `market_overview` / `competitors` / `technology` sections plus collected `sources`
+
+> Numbers and text in offline mode are deterministic stubs. They prove the orchestration, result-passing and aggregation mechanics — not real research quality.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -312,16 +384,19 @@ If you want a real LLM to drive task analysis, copy `.env.example` to `.env` and
 
 ```
 app/
-├── models/        Pydantic schemas: Task, Capability, AgentSpec, Topology
+├── models/        Pydantic schemas: Task, Capability, AgentSpec, Topology, ResearchReport
 ├── analyzer/      Task analysis — rules first, optional LLM
 ├── allocator/     Capability → Role → AgentSpec allocation
-├── llm/           Optional OpenAI-compatible structured-output client
+├── llm/           LLM provider abstraction (mock + OpenAI/DeepSeek compatible)
 ├── topology/      Templates, generator, DAG validator
 ├── scheduler/     Async DAG scheduler, retry, replan, mock executor
 ├── evaluation/    Metrics collector, policy, evaluator, benchmark
+├── runtime/       v0.2.0: TaskDecomposer, AgentRuntime, orchestrator, result store, output models
+├── tools/         v0.2.0: ToolRegistry (web_search + mock_search)
 ├── demo/          Presentation layer: tasks, service, render, Streamlit page
 ├── config.py
-└── ui.py          Streamlit entry point
+├── ui.py          Streamlit entry point (v0.1.0)
+└── ui_live.py     Streamlit "AI Team Live View" (v0.2.0)
 
 examples/
 ├── demo.py
@@ -348,13 +423,14 @@ ruff check .
 ```
 
 ```
-Tests: 69 passed
+Tests: 83 passed
 Ruff:  PASS
 CI:    Python 3.11 / 3.12
 ```
 
 - Day 1-5: 44 tests
 - Day 6: 25 tests (`tests/test_ui.py` — service functions, offline mode, failure simulation, evaluation pipeline, SVG/timeline rendering, language toggle)
+- v0.2.0: 14 tests (`tests/test_research.py` — decomposition, runtime, providers, tools, result passing, report aggregation, failure/recovery, offline run; plus a Live View AppTest)
 - The UI text switches between English and Simplified Chinese; switching the language never changes the team or topology the demo allocates.
 
 `tests/test_ui.py` deliberately does not assert Streamlit HTML details. CI runs ruff, pytest, a UI import smoke test and the offline demos on Python 3.11 and 3.12 — no API key, no network, no external service.
@@ -400,3 +476,4 @@ Directions, not commitments:
 - [x] Day 6 — Streamlit Visualization
 - [x] Bilingual UI (English / 简体中文)
 - [x] v0.1.0 Release
+- [x] v0.2.0 — AutoTeam Research: real Agent Runtime on top of the engine (TaskDecomposer, LLM provider, ToolRegistry, ResultStore, ResearchReport, Live View)

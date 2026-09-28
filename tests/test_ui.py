@@ -249,6 +249,29 @@ def test_timeline_html_renders_every_agent() -> None:
     assert "SUCCESS" in html
 
 
+def test_timeline_adapts_to_light_and_dark_themes() -> None:
+    team = team_for()
+    labels = team.labels()
+    topology = build_candidates(team)[0]
+    topology_run = run(run_topology(team, topology, RunConfig(delay=0.001)))
+    light = render_timeline_html(topology_run, labels, dark=False)
+    dark = render_timeline_html(topology_run, labels, dark=True)
+    assert light != dark
+    assert "#374151" in light and "#374151" not in dark
+    assert "#E5E7EB" in dark and "#E5E7EB" not in light
+
+
+def test_page_css_stays_theme_agnostic() -> None:
+    """Guard against the regression where hardcoded light-theme colors made the
+    tables invisible on a dark Streamlit theme."""
+    pytest.importorskip("streamlit")
+    module = importlib.import_module("app.demo.app")
+    css = module._PAGE_CSS
+    for hardcoded in ("#111827", "#6B7280", "#E5E7EB", "#F1F3F7", "#EEF0F3"):
+        assert hardcoded not in css, f"hardcoded theme color {hardcoded!r} is back"
+    assert "inherit" in css
+
+
 # ---------------------------------------------------------------------------
 # i18n (Task #15): every presentation string must localize without changing the
 # underlying demo outcome. Core identifiers (capabilities, roles, statuses,
@@ -357,3 +380,14 @@ def test_ui_switches_to_chinese_on_language_radio() -> None:
         "市场调研" in (item.value or "") or "市场研究" in (item.value or "")
         for item in at.markdown
     )
+
+
+def test_live_view_renders_initial_state() -> None:
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file(str(REPO_ROOT / "app" / "ui_live.py")).run(timeout=30)
+    assert not at.exception
+    assert any("AI Team Live View" in (item.value or "") for item in at.title)
+    # Before running, the page shows the offline-mode hint, not a report.
+    assert any("离线" in (item.value or "") for item in at.info)

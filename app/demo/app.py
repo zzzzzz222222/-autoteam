@@ -69,24 +69,45 @@ STATUS_COLORS = {
     "pending": "#9CA3AF",
 }
 
+# Colors are inherited from the active Streamlit theme (light or dark) instead of
+# being hardcoded, so the custom markup stays readable on both.
 _PAGE_CSS = """
 <style>
 .block-container { max-width: 1080px; padding-top: 2rem; padding-bottom: 4rem; }
 h1 { font-weight: 650; letter-spacing: -0.02em; margin-bottom: 0; }
-.at-sub { color: #6B7280; margin-top: 0.2rem; margin-bottom: 1.6rem; font-size: 0.92rem; }
-.at-label { color: #6B7280; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
-.at-value { color: #111827; font-size: 1.02rem; font-weight: 600; }
+.at-sub { color: inherit; opacity: 0.62; margin-top: 0.2rem; margin-bottom: 1.6rem;
+  font-size: 0.92rem; }
+.at-label { color: inherit; opacity: 0.58; font-size: 0.7rem; text-transform: uppercase;
+  letter-spacing: 0.06em; }
+.at-value { color: inherit; font-size: 1.02rem; font-weight: 600; }
 .at-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.at-table th { text-align: left; color: #6B7280; font-size: 11px; text-transform: uppercase;
-  letter-spacing: 0.05em; border-bottom: 1px solid #E5E7EB; padding: 6px 8px; font-weight: 600; }
-.at-table td { padding: 6px 8px; border-bottom: 1px solid #F1F3F7; color: #111827; }
-hr { border-color: #EEF0F3; }
+.at-table th { text-align: left; color: inherit; opacity: 0.7; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px; font-weight: 600;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.42); }
+.at-table td { padding: 6px 8px; color: inherit;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.22); }
+hr { border-color: rgba(128, 128, 128, 0.24); }
 </style>
 """
 
 
 def _locale() -> str:
     return st.session_state.get(LOCALE_KEY, DEFAULT_LOCALE)
+
+
+def _is_dark() -> bool:
+    """Best-effort theme detection so the iframe timeline stays readable."""
+    try:
+        theme = getattr(st.context, "theme", None)
+        theme_type = getattr(theme, "type", None)
+        if theme_type in ("light", "dark"):
+            return theme_type == "dark"
+    except Exception:
+        pass
+    try:
+        return st.get_option("theme.base") == "dark"
+    except Exception:
+        return False
 
 
 def t(key: str, **kwargs: object) -> str:
@@ -338,7 +359,7 @@ def _render_runs(runs: list, labels: dict[str, str]) -> None:
             for event in run.replan_events:
                 st.caption(f"[REPLAN] {event}")
             render_html(
-                render_timeline_html(run, labels),
+                render_timeline_html(run, labels, dark=_is_dark()),
                 height=timeline_height(run),
                 scrolling=False,
             )

@@ -6,7 +6,7 @@
 
 > AutoTeam 动态组建智能体团队、生成经过校验的协作拓扑、异步执行、从故障中恢复，并评估拓扑行为。
 
-**状态：v0.1.0 —— 工程原型。** AutoTeam 是一个离线、确定性的演示，目的是让多智能体编排的结构变得可见、可测试。它不是生产级智能体运行时，不是托管服务，也不是真实世界的 LLM 基准。详见 [局限性](#局限性)。
+**状态：v0.1.0 已发布；v0.2.0（AutoTeam Research）叠加于其上。** AutoTeam 是一个离线、确定性的演示，目的是让多智能体编排的结构变得可见、可测试。它不是生产级智能体运行时，不是托管服务，也不是真实世界的 LLM 基准。详见 [局限性](#局限性)。
 
 ### 一段话讲清楚
 
@@ -267,6 +267,55 @@ UI 在一屏内走完整条流水线：
 
 ---
 
+## AutoTeam Research（v0.2.0）
+
+v0.2.0 是在稳定的 v0.1.0 引擎之上叠加的**杀手级演示层**。它没有重写编排引擎，而是在 `AsyncDAGScheduler` 之上新增了真实智能体运行时、任务拆解、研究工具与结果聚合。
+
+核心原则不变：**LLM 提议，Schema 约束，代码校验，调度器执行。**
+
+### 它做什么
+
+给一个研究任务，它会：
+
+1. **拆解**任务为受 Schema 约束的 `SubtaskPlan`（规划者角色）
+2. **组建团队**——每个子任务一个智能体（研究 Agent / 竞品分析师 / 技术分析师 / 报告撰写者），直接由计划派生
+3. **构建协作 DAG**——边遵循每个子任务的 `depends_on`；计划的扇入结构变成并行层
+4. **执行**——通过**未改动**的 `AsyncDAGScheduler` 与新 `AgentRuntime` 执行器（重试 / 重规划 / 评估自动生效）
+5. **智能体间传递结果**——每个智能体通过 `ExecutionContext.get_upstream_results` 读取上游
+6. **聚合**为最终的 `ResearchReport`
+
+### 运行实时视图
+
+```bash
+streamlit run app/ui_live.py
+```
+
+页面呈现拆解结果、团队/拓扑、智能体**实时状态**（pending → running → success/failed/skipped）以及最终报告。默认**完全离线**运行，无需 API Key。
+
+### 默认离线，真实 LLM 可选
+
+| 环境变量 | 作用 | 默认值 |
+|---|---|---|
+| `AUTOTEAM_LLM_PROVIDER` | `mock`（离线）或 `openai` / `deepseek` | `mock` |
+| `AUTOTEAM_API_KEY` | 真实提供方的 API Key | _无 → 回退到 mock_ |
+| `AUTOTEAM_LLM_MODEL` | 模型 id（如 `deepseek-chat`） | 提供方默认 |
+| `AUTOTEAM_LLM_BASE_URL` | OpenAI 兼容 base URL | DeepSeek 端点 |
+| `AUTOTEAM_WEB_SEARCH_URL` / `AUTOTEAM_WEB_SEARCH_API_KEY` | 真实网页搜索后端 | _无 → 离线 mock 搜索_ |
+
+无任何 Key 时，演示使用 `MockLLMProvider`（确定性结构化桩）与 `mock_search`，整个研究管线无需联网即可运行。
+
+### 离线示例输出
+
+对 *"分析中国跨境电商 SaaS 市场的竞争格局与技术趋势"* 这类任务，离线管线会产出：
+
+- **团队：** `research_agent`、`competitor_analyst`、`technology_analyst`、`report_writer`
+- **拓扑：** 2 个并行层——`[research, competitor, technology]` → `[report_writer]`
+- **报告：** 聚合的 `market_overview` / `competitors` / `technology` 章节以及收集的 `sources`
+
+> 离线模式下的数字与文本均为确定性桩，用于证明编排、结果传递与聚合机制——而非真实研究质量。
+
+---
+
 ## 快速开始
 
 ```bash
@@ -400,3 +449,4 @@ CI：  Python 3.11 / 3.12
 - [x] Day 6 —— Streamlit 可视化
 - [x] 中英文切换（UI i18n）
 - [x] v0.1.0 Release
+- [x] v0.2.0 —— AutoTeam Research：在引擎之上叠加真实 Agent Runtime（任务拆解、LLM Provider、工具注册表、结果存储、研究报告、实时视图）

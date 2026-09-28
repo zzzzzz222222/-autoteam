@@ -32,16 +32,30 @@ STATUS_COLORS: Mapping[str, str] = {
 _EDGE_COLOR = "#94A3B8"
 _TEXT_COLOR = "#111827"
 
-_TIMELINE_CSS = (
-    "<style>"
-    ".row{display:flex;align-items:center;gap:10px;height:28px;"
-    "font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;color:#374151}"
-    ".name{width:150px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
-    ".track{position:relative;flex:1;height:10px;background:#F1F3F7;border-radius:999px}"
-    ".bar{position:absolute;top:0;height:10px;border-radius:999px;min-width:2px}"
-    ".value{width:150px;flex:none;text-align:right;color:#6B7280;font-variant-numeric:tabular-nums}"
-    "</style>"
-)
+# The DAG nodes keep a light fill in both themes, so their dark text always reads.
+# The timeline lives in an isolated iframe and therefore cannot inherit the page
+# theme, so its colors are chosen from the ``dark`` flag instead.
+_TIMELINE_COLORS = {
+    False: {"text": "#374151", "value": "#6B7280", "track": "#F1F3F7"},
+    True: {"text": "#E5E7EB", "value": "#9CA3AF", "track": "rgba(148, 163, 184, 0.26)"},
+}
+
+
+def _timeline_css(dark: bool) -> str:
+    colors = _TIMELINE_COLORS[dark]
+    return (
+        "<style>"
+        ".row{display:flex;align-items:center;gap:10px;height:28px;"
+        "font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;"
+        f"color:{colors['text']}}}"
+        ".name{width:150px;flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+        f".track{{position:relative;flex:1;height:10px;background:{colors['track']};"
+        "border-radius:999px}"
+        ".bar{position:absolute;top:0;height:10px;border-radius:999px;min-width:2px}"
+        f".value{{width:150px;flex:none;text-align:right;color:{colors['value']};"
+        "font-variant-numeric:tabular-nums}"
+        "</style>"
+    )
 
 
 def _escape(text: str) -> str:
@@ -124,7 +138,9 @@ def render_topology_text(topology: Topology, labels: Mapping[str, str]) -> str:
     )
 
 
-def render_timeline_html(run: "ExecutionRun", labels: Mapping[str, str] | None = None) -> str:
+def render_timeline_html(
+    run: "ExecutionRun", labels: Mapping[str, str] | None = None, dark: bool = False
+) -> str:
     """Render per-agent start/duration as a minimal Gantt-style bar chart."""
     names = labels or {}
     total = max(run.duration, 1e-6)
@@ -150,7 +166,7 @@ def render_timeline_html(run: "ExecutionRun", labels: Mapping[str, str] | None =
             + '"></div></div><div class="value">'
             + f"{status.upper()} · {duration_text}</div></div>"
         )
-    return _TIMELINE_CSS + "".join(rows)
+    return _timeline_css(dark) + "".join(rows)
 
 
 def timeline_height(run: "ExecutionRun") -> int:

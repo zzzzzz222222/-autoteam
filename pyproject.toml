@@ -14,7 +14,7 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.6", "streamlit>=1.30"]
 ui = ["streamlit>=1.30"]
 
 [tool.setuptools]
-packages = ["app", "app.models", "app.analyzer", "app.allocator", "app.llm", "app.topology", "app.scheduler", "app.evaluation", "app.demo"]
+packages = ["app", "app.models", "app.analyzer", "app.allocator", "app.llm", "app.topology", "app.scheduler", "app.evaluation", "app.demo", "app.runtime", "app.tools"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
