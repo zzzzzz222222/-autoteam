@@ -177,9 +177,9 @@ class AgentRuntime:
                 parts.append(f"[{source_id}] {output}")
         return ("\n\nUpstream inputs:\n" + "\n\n".join(parts) + "\n\n") if parts else ""
 
-    def _run_tools(self, behavior: ResearchBehavior, task: Task, upstream_text: str) -> str:
+    def _run_tools(self, tool_names: list[str], task: Task) -> str:
         blocks: list[str] = []
-        for tool_name in behavior.tools:
+        for tool_name in tool_names:
             try:
                 result = self.tool_registry.run(tool_name, task.description)
                 label = "offline mock" if result.offline else "web"
@@ -189,11 +189,24 @@ class AgentRuntime:
                 blocks.append(f"[{tool_name}] error: {exc}")
         return ("\n\nTool results:\n" + "\n\n".join(blocks) + "\n\n") if blocks else ""
 
+    def _dynamic_prompt(self, agent: AgentSpec, task: Task, upstream: str, tools: str) -> str:
+        system_prompt = getattr(agent, "system_prompt", "") or f"You are {agent.role.name}."
+        return (
+            f"{system_prompt}\n\n"
+            f"TASK: {task.description}\nCONTEXT: {task.context or ''}\n"
+            f"{upstream}{tools}"
+            f"Return JSON matching TaskDeliverable."
+        )
+
     async def execute(self, agent: AgentSpec, context: ExecutionContext) -> Any:
         agent_id = agent.id or "unknown"
         self.call_counts[agent_id] = self.call_counts.get(agent_id, 0) + 1
         role_name = agent.role.name
         behavior = self._resolve_behavior(role_name)
+        # v0.3.0: dynamically generated agents carry their own output schema and
+        # tool list; everything else keeps the v0.2.0 behavior mapping.
+        dynamic_model = getattr(agent, "output_schema", None)
+        use_dynamic = isinstance(dynamic_model, type) and issubclass(dynamic_model, BaseModel)
         self.store.record(
             RunEvent(
                 agent_id=agent_id,
@@ -212,9 +225,15 @@ class AgentRuntime:
 
             upstream = context.get_upstream_results(agent_id)
             upstream_text = self._format_upstream(upstream)
-            tool_text = self._run_tools(behavior, context.task, upstream_text)
-            prompt = behavior.prompt_builder(context.task, role_name, upstream_text, tool_text)
-            output = self.provider.structured_completion(prompt, behavior.output_model)
+            if use_dynamic:
+                output_model = dynamic_model
+                tool_text = self._run_tools(list(agent.tools), context.task)
+                prompt = self._dynamic_prompt(agent, context.task, upstream_text, tool_text)
+            else:
+                output_model = behavior.output_model
+                tool_text = self._run_tools(behavior.tools, context.task)
+                prompt = behavior.prompt_builder(context.task, role_name, upstream_text, tool_text)
+            output = self.provider.structured_completion(prompt, output_model)
             self.store.record(
                 RunEvent(
                     agent_id=agent_id,

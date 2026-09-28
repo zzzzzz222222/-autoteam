@@ -6,7 +6,7 @@
 
 > AutoTeam dynamically forms agent teams, generates validated collaboration topologies, executes them asynchronously, recovers from failures, and evaluates topology behavior.
 
-**Status: v0.1.0 released; v0.2.0 (AutoTeam Research) layered on top.** AutoTeam is an offline deterministic demo built to make multi-agent orchestration structure visible and testable. It is not a production agent runtime, not a hosted service, and not a real-world LLM benchmark. See [Limitations](#limitations).
+**Status: v0.1.0 released; v0.2.0 (AutoTeam Research) and v0.3.0 (Dynamic Team Intelligence) layered on top.** AutoTeam is an offline deterministic demo built to make multi-agent orchestration structure visible and testable. It is not a production agent runtime, not a hosted service, and not a real-world LLM benchmark. See [Limitations](#limitations).
 
 ### How it works in one paragraph
 
@@ -339,6 +339,54 @@ For a task like *"分析中国跨境电商 SaaS 市场的竞争格局与技术�
 
 ---
 
+## Dynamic Team Intelligence (v0.3.0)
+
+v0.3.0 proves the core claim: **AutoTeam does not run a fixed set of agents through a fixed flow.** A task is transformed dynamically into:
+
+```
+Task → Task Understanding → Capability Discovery → Task Decomposition
+     → Role Allocation → Dynamic Agent Generation → Tool Selection
+     → Dependency Analysis → Execution Plan → Existing Scheduler → Existing Runtime
+```
+
+Different tasks produce **visibly different teams** — different capabilities, roles, agents, tools, dependencies and execution layers. Nothing is hard-coded: the team is a *result* of the task, never a setting.
+
+### New building blocks
+
+| Module | Responsibility |
+|---|---|
+| `app/runtime/understanding.py` | `TaskUnderstanding` — domain, objective, expected output, capability set |
+| `app/runtime/capability_discovery.py` | Deterministic keyword rules (+ optional LLM refinement, validated against the capability vocabulary) |
+| `app/runtime/decomposer.py` → `DynamicDecomposer` | Stage-based decomposition into `DynamicSubtask`s with **structured ids and dependencies** (backward compatible with the v0.2.0 `TaskDecomposer`) |
+| `app/runtime/role_allocation.py` | Groups subtasks into roles — one role may own several subtasks (e.g. Backend Developer = API design + implementation) |
+| `app/runtime/agent_factory.py` | `DynamicAgentSpec` (extends `AgentSpec`) with system prompt, tools, input/output schemas and a structured reason |
+| `app/runtime/tool_selector.py` | Capability → tool mapping, filtered against the `ToolRegistry` — tools can never be invented |
+| `app/runtime/dependency.py` | Validates the dependency DAG (missing / self / cycle), lifts it onto agents, computes layers with the existing validator |
+| `app/runtime/dynamic_team.py` | `build_dynamic_team(task)` → `ExecutionPlan` (+ `TeamFormationExplanation`); `run_dynamic_team(plan)` executes via the existing scheduler |
+
+The explanation ("Why this team?") stores only structured, displayable reasons — never LLM chain-of-thought.
+
+### Three offline demos, three different teams
+
+| | Demo A · AI Agent market analysis | Demo B · FastAPI e-commerce backend | Demo C · SaaS market entry strategy |
+|---|---|---|---|
+| Domain | market_research | software_engineering | business_strategy |
+| Capabilities | market, competitor, technology, data, report | requirement, architecture, api, database, backend, testing | market, strategy, customer, financial, proposal |
+| Roles | Market Researcher · Competitor Analyst · Data Analyst · Technology Analyst · Report Writer | Requirement Analyst · System Architect · Backend Developer · Database Engineer · Test Engineer | Customer Researcher · Market Researcher · Strategy Planner · Financial Analyst · Proposal Writer |
+| Tools | web_search · data_analyzer · calculator | schema_validator · code_analysis | web_search · data_analyzer · calculator |
+| Layers | 3 | 5 | 4 |
+
+Run the demo:
+
+```bash
+python examples/dynamic_team_demo.py
+streamlit run app/ui_dynamic.py   # Dynamic Team view with "Why this team?"
+```
+
+Offline mode uses deterministic rule-based discovery and mock providers. Real LLM mode (set `AUTOTEAM_API_KEY`) lets the LLM propose the understanding and the plan — the code still validates capabilities, dependencies and the DAG, and falls back to the deterministic rules on any violation. No real research-quality benchmark is claimed anywhere.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -391,19 +439,21 @@ app/
 ├── topology/      Templates, generator, DAG validator
 ├── scheduler/     Async DAG scheduler, retry, replan, mock executor
 ├── evaluation/    Metrics collector, policy, evaluator, benchmark
-├── runtime/       v0.2.0: TaskDecomposer, AgentRuntime, orchestrator, result store, output models
-├── tools/         v0.2.0: ToolRegistry (web_search + mock_search)
+├── runtime/       v0.2.0 research runtime + v0.3.0 dynamic team pipeline
+├── tools/         ToolRegistry: web_search, mock_search, calculator, data_analyzer, schema_validator, code_analysis
 ├── demo/          Presentation layer: tasks, service, render, Streamlit page
 ├── config.py
 ├── ui.py          Streamlit entry point (v0.1.0)
-└── ui_live.py     Streamlit "AI Team Live View" (v0.2.0)
+├── ui_live.py     Streamlit "AI Team Live View" (v0.2.0)
+└── ui_dynamic.py  Streamlit "Dynamic Team" view (v0.3.0)
 
 examples/
 ├── demo.py
 ├── topology_demo.py
 ├── scheduler_demo.py
 ├── recovery_demo.py
-└── evaluation_demo.py
+├── evaluation_demo.py
+└── dynamic_team_demo.py
 
 tests/
 .github/
@@ -423,15 +473,15 @@ ruff check .
 ```
 
 ```
-Tests: 83 passed
+Tests: 110 passed
 Ruff:  PASS
 CI:    Python 3.11 / 3.12
 ```
 
 - Day 1-5: 44 tests
-- Day 6: 25 tests (`tests/test_ui.py` — service functions, offline mode, failure simulation, evaluation pipeline, SVG/timeline rendering, language toggle)
-- v0.2.0: 14 tests (`tests/test_research.py` — decomposition, runtime, providers, tools, result passing, report aggregation, failure/recovery, offline run; plus a Live View AppTest)
-- The UI text switches between English and Simplified Chinese; switching the language never changes the team or topology the demo allocates.
+- Day 6: 27 tests (`tests/test_ui.py` — service functions, offline mode, failure simulation, evaluation pipeline, SVG/timeline rendering, language toggle, Live View)
+- v0.2.0: 11 tests (`tests/test_research.py` — decomposition, runtime, providers, tools, result passing, report aggregation, failure/recovery, offline run)
+- v0.3.0: 28 tests (`tests/test_dynamic_team.py` — understanding, capability discovery, dynamic decomposition, role allocation, agent factory, tool selection, dependency analysis incl. cycle/missing/self detection, execution plan, multi-task differentiation, offline E2E, UI)
 
 `tests/test_ui.py` deliberately does not assert Streamlit HTML details. CI runs ruff, pytest, a UI import smoke test and the offline demos on Python 3.11 and 3.12 — no API key, no network, no external service.
 
@@ -477,3 +527,4 @@ Directions, not commitments:
 - [x] Bilingual UI (English / 简体中文)
 - [x] v0.1.0 Release
 - [x] v0.2.0 — AutoTeam Research: real Agent Runtime on top of the engine (TaskDecomposer, LLM provider, ToolRegistry, ResultStore, ResearchReport, Live View)
+- [x] v0.3.0 — Dynamic Team Intelligence: Task → Capability → Role → Agent → Tool → Dependency → Execution Plan (three differentiated offline demos)

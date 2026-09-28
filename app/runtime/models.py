@@ -61,3 +61,12 @@ class ResearchReport(BaseModel):
     technology: TechnologyFindings | None = None
     sources: list[str] = Field(default_factory=list)
     generated_at: str = ""
+
+
+class TaskDeliverable(BaseModel):
+    """Generic structured deliverable returned by dynamically generated agents (v0.3.0)."""
+
+    title: str = ""
+    summary: str = ""
+    key_points: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)

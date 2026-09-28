@@ -93,11 +93,14 @@ def _mock_structured(prompt: str, response_model: type[BaseModel]) -> BaseModel:
     """Fill a response model with deterministic offline stubs.
 
     Special-cases SubtaskPlan (so the demo decomposes into sensible research
-    steps); otherwise reflects on the model fields and fills plausible values.
+    steps) and TaskDeliverable (so dynamic agents produce task-referencing
+    deliverables); otherwise reflects on the model fields and fills values.
     """
     name = response_model.__name__
     if name == "SubtaskPlan":
         return _mock_subtask_plan(prompt)
+    if name == "TaskDeliverable":
+        return _mock_task_deliverable(prompt)
     values: dict[str, object] = {}
     for field_name, field in response_model.model_fields.items():
         annotation = field.annotation
@@ -164,4 +167,28 @@ def _mock_subtask_plan(prompt: str) -> "SubtaskPlan":  # noqa: F821
                 target_role="Report Writer",
             ),
         ],
+    )
+
+
+def _mock_task_deliverable(prompt: str) -> "TaskDeliverable":  # noqa: F821
+    from app.runtime.models import TaskDeliverable
+
+    task_line = ""
+    for line in prompt.splitlines():
+        if line.startswith("TASK:"):
+            task_line = line[len("TASK:"):].strip()
+            break
+    return TaskDeliverable(
+        title=f"Deliverable — {task_line[:60]}" if task_line else "Deliverable (offline stub)",
+        summary=(
+            f"[mock] structured deliverable for '{task_line[:80]}' (offline stub)."
+            if task_line
+            else "[mock] structured deliverable (offline stub)."
+        ),
+        key_points=[
+            "[mock] key point 1 derived from the task and upstream inputs.",
+            "[mock] key point 2 derived from the task and upstream inputs.",
+            "[mock] key point 3 derived from the task and upstream inputs.",
+        ],
+        sources=[],
     )

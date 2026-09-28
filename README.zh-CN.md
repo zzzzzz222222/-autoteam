@@ -6,7 +6,7 @@
 
 > AutoTeam 动态组建智能体团队、生成经过校验的协作拓扑、异步执行、从故障中恢复，并评估拓扑行为。
 
-**状态：v0.1.0 已发布；v0.2.0（AutoTeam Research）叠加于其上。** AutoTeam 是一个离线、确定性的演示，目的是让多智能体编排的结构变得可见、可测试。它不是生产级智能体运行时，不是托管服务，也不是真实世界的 LLM 基准。详见 [局限性](#局限性)。
+**状态：v0.1.0 已发布；v0.2.0（AutoTeam Research）与 v0.3.0（Dynamic Team Intelligence）叠加于其上。** AutoTeam 是一个离线、确定性的演示，目的是让多智能体编排的结构变得可见、可测试。它不是生产级智能体运行时，不是托管服务，也不是真实世界的 LLM 基准。详见 [局限性](#局限性)。
 
 ### 一段话讲清楚
 
@@ -316,6 +316,54 @@ streamlit run app/ui_live.py
 
 ---
 
+## 动态团队智能（v0.3.0）
+
+v0.3.0 证明核心命题：**AutoTeam 不是"固定几个 Agent 跑固定流程"。** 一个任务会被动态转换为：
+
+```
+Task → 任务理解 → 能力发现 → 任务拆解
+     → 角色分配 → 动态 Agent 生成 → 工具选择
+     → 依赖分析 → 执行计划 → 现有 Scheduler → 现有 Runtime
+```
+
+不同任务产生**明显不同的团队**——能力、角色、智能体、工具、依赖、执行分层全部不同。没有任何写死：团队是任务的**结果**，不是配置。
+
+### 新增模块
+
+| 模块 | 职责 |
+|---|---|
+| `app/runtime/understanding.py` | `TaskUnderstanding`——领域、目标、预期产出、能力集合 |
+| `app/runtime/capability_discovery.py` | 确定性关键词规则（+ 可选 LLM 增强，按能力词表校验） |
+| `app/runtime/decomposer.py` → `DynamicDecomposer` | 按 stage 拆解为 `DynamicSubtask`，依赖为**结构化 id**（与 v0.2.0 `TaskDecomposer` 向后兼容） |
+| `app/runtime/role_allocation.py` | 子任务合并为角色——一个角色可承担多个子任务（如 Backend Developer = API 设计 + 实现） |
+| `app/runtime/agent_factory.py` | `DynamicAgentSpec`（继承 `AgentSpec`）：system prompt、工具、输入/输出 schema、结构化创建理由 |
+| `app/runtime/tool_selector.py` | 能力 → 工具映射，按 `ToolRegistry` 过滤——工具不可能被凭空创造 |
+| `app/runtime/dependency.py` | 校验依赖 DAG（缺失/自依赖/环），映射到智能体图，用现有 validator 计算分层 |
+| `app/runtime/dynamic_team.py` | `build_dynamic_team(task)` → `ExecutionPlan`（含 `TeamFormationExplanation`）；`run_dynamic_team(plan)` 经现有调度器执行 |
+
+"Why this team?" 解释只保存结构化、可展示的理由——不记录 LLM 隐藏推理。
+
+### 三个离线 Demo，三个不同团队
+
+| | Demo A · AI Agent 市场分析 | Demo B · FastAPI 电商后端 | Demo C · SaaS 市场进入策略 |
+|---|---|---|---|
+| 领域 | market_research | software_engineering | business_strategy |
+| 能力 | 市场、竞品、技术、数据、报告 | 需求、架构、API、数据库、后端、测试 | 市场、策略、客户、财务、方案 |
+| 角色 | Market Researcher · Competitor Analyst · Data Analyst · Technology Analyst · Report Writer | Requirement Analyst · System Architect · Backend Developer · Database Engineer · Test Engineer | Customer Researcher · Market Researcher · Strategy Planner · Financial Analyst · Proposal Writer |
+| 工具 | web_search · data_analyzer · calculator | schema_validator · code_analysis | web_search · data_analyzer · calculator |
+| 分层 | 3 | 5 | 4 |
+
+运行：
+
+```bash
+python examples/dynamic_team_demo.py
+streamlit run app/ui_dynamic.py   # 动态团队视图（含 "Why this team?"）
+```
+
+离线模式使用确定性规则发现与 mock provider。真实 LLM 模式（配置 `AUTOTEAM_API_KEY`）由 LLM 提议理解与计划——代码仍然校验能力、依赖与 DAG，任何违例都回退到确定性规则。全文不声称任何真实研究质量基准。
+
+---
+
 ## 快速开始
 
 ```bash
@@ -450,3 +498,4 @@ CI：  Python 3.11 / 3.12
 - [x] 中英文切换（UI i18n）
 - [x] v0.1.0 Release
 - [x] v0.2.0 —— AutoTeam Research：在引擎之上叠加真实 Agent Runtime（任务拆解、LLM Provider、工具注册表、结果存储、研究报告、实时视图）
+- [x] v0.3.0 —— Dynamic Team Intelligence：Task → Capability → Role → Agent → Tool → Dependency → Execution Plan（三个差异化离线 Demo）

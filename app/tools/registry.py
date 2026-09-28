@@ -36,6 +36,51 @@ def mock_search(query: str) -> ToolResult:
     )
 
 
+def calculator(query: str) -> ToolResult:
+    return ToolResult(
+        query=query,
+        offline=True,
+        results=[
+            f"[calculator] deterministic sizing metrics computed for '{query}'.",
+            "[calculator] offline stub — no live computation backend configured.",
+        ],
+    )
+
+
+def data_analyzer(query: str) -> ToolResult:
+    return ToolResult(
+        query=query,
+        offline=True,
+        results=[
+            f"[data_analyzer] aggregated metric table derived for '{query}'.",
+            f"[data_analyzer] trend summary extracted for '{query}'.",
+            "[data_analyzer] offline stub — deterministic output, no live data.",
+        ],
+    )
+
+
+def schema_validator(query: str) -> ToolResult:
+    return ToolResult(
+        query=query,
+        offline=True,
+        results=[
+            f"[schema_validator] entity and relation checks executed for '{query}'.",
+            "[schema_validator] offline stub — deterministic validation report.",
+        ],
+    )
+
+
+def code_analysis(query: str) -> ToolResult:
+    return ToolResult(
+        query=query,
+        offline=True,
+        results=[
+            f"[code_analysis] interface and module structure reviewed for '{query}'.",
+            "[code_analysis] offline stub — deterministic findings, no execution.",
+        ],
+    )
+
+
 def web_search(query: str) -> ToolResult:
     """Offline-safe web search: real backend if configured, else mock fallback."""
     api_key = os.getenv("AUTOTEAM_WEB_SEARCH_API_KEY")
@@ -66,7 +111,14 @@ def web_search(query: str) -> ToolResult:
 class ToolRegistry:
     def __init__(self, mode: str = "auto") -> None:
         self.mode = mode
-        self._tools = {"web_search": web_search, "mock_search": mock_search}
+        self._tools = {
+            "web_search": web_search,
+            "mock_search": mock_search,
+            "calculator": calculator,
+            "data_analyzer": data_analyzer,
+            "schema_validator": schema_validator,
+            "code_analysis": code_analysis,
+        }
 
     def available(self) -> list[str]:
         return list(self._tools)
