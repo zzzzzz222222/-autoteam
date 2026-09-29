@@ -216,18 +216,18 @@ AUTOTEAM_LLM_MODEL=deepseek-chat
 AUTOTEAM_LLM_BASE_URL=https://api.deepseek.com/v1
 ```
 
-Real web search is also optional and plugs into any HTTP search API:
+Real web search plugs into a **Tavily-compatible** HTTP JSON endpoint (POST + Bearer):
 
 ```bash
-AUTOTEAM_WEB_SEARCH_URL=https://your-search-api.example.com
+AUTOTEAM_WEB_SEARCH_URL=https://api.tavily.com/search
 AUTOTEAM_WEB_SEARCH_API_KEY=your_key
 ```
 
-> **Honest status:** Real LLM and Real Web Search adapters are **implemented**. Since the release preparation, the **Real LLM path has been actually verified** against a live DeepSeek-compatible endpoint (see [Real LLM Verification](#real-llm-verification)). **Real Web Search has not been externally verified** because no vendor credentials were available in the verification environment; its offline fallback (structured `offline_mock` results, empty URLs) is verified and degrades cleanly instead of crashing. The real adapters are not exercised by CI or tests; if no key is present, `get_llm_provider()` returns the mock automatically.
+> **Honest status:** Real LLM and Real Web Search adapters are **implemented**. Since the release preparation, the **Real LLM path has been actually verified** against a live DeepSeek-compatible endpoint and the **Real Web Search adapter verified against Tavily's live API** (see [Real LLM Verification](#real-llm-verification)). API keys are configured by the user only in a gitignored local `.env` — never committed. The offline fallback (structured `offline_mock` results, empty URLs) remains verified and degrades cleanly on any real-request failure. The real adapters are not exercised by CI or tests; if no key is present, `get_llm_provider()` returns the mock automatically and `web_search` stays offline.
 
 ## Real LLM Verification
 
-As part of the final pre-publication pass, a live **DeepSeek-compatible request** was executed with a real API key (kept only in a gitignored local `.env`, never in the repo):
+As part of the final pre-publication pass, a live **DeepSeek-compatible request** was executed with a real API key (kept only in a gitignored local `.env`, never in the repo), and a **real Tavily web search** was verified end-to-end:
 
 | Capability | Status |
 |---|---|
@@ -235,12 +235,12 @@ As part of the final pre-publication pass, a live **DeepSeek-compatible request*
 | **Real LLM** | **Implemented + Actually Verified** |
 | Calculator (safe AST) | Verified |
 | Local Knowledge (path-traversal protected) | Verified |
-| **Real Web Search** | **Implemented + Not Verified** (no vendor credentials) |
+| **Real Web Search (Tavily)** | **Implemented + Actually Verified** 🔍 |
 | Evidence / Sources | Verified |
 | Artifact collaboration | Verified |
 | Retry / Replan | Verified |
 
-What was actually verified end-to-end with the real LLM: a real DeepSeek request returned meaningful content; a **multi-agent session completed with `SUCCESS`** through dynamic team formation → agent execution → artifacts → Evidence/Sources → downstream agent context → **final artifact generation**. Note this was a single live verification run, not a sustained production test — AutoTeam remains an experimental design study (see [Limitations](#limitations)).
+What was actually verified end-to-end with the real LLM: a real DeepSeek request returned meaningful content; a **multi-agent session completed with `SUCCESS`** through dynamic team formation → agent execution → artifacts → Evidence/Sources → downstream agent context → **final artifact generation**. The **real web_search adapter was executed against Tavily's live API** with genuine results and real URLs flowing into Sources and Evidence (offline fallback re-verified separately; no fabricated URLs, no key leakage). Note these were live verification runs, not sustained production testing — AutoTeam remains an experimental design study (see [Limitations](#limitations)).
 
 ## Tools
 
@@ -248,7 +248,7 @@ What was actually verified end-to-end with the real LLM: a real DeepSeek request
 
 | Tool | Offline | Real |
 |---|---|---|
-| `web_search` | deterministic `offline_mock` results, empty URLs | HTTP call with timeout, response validation, key never logged |
+| `web_search` | deterministic `offline_mock` results, empty URLs | **Tavily-compatible POST** (Bearer, timeout, response validation, key never logged) |
 | `calculator` | safe AST arithmetic — **no `eval`** | same |
 | `local_knowledge` | controlled reads of a workspace (`.md/.txt/.json/.csv`), path-traversal blocked | same |
 | `mock_search`, `data_analyzer`, `schema_validator`, `code_analysis` | deterministic offline stubs | — |
@@ -309,7 +309,7 @@ Current verified status:
 AutoTeam is an **experimental design study**, not a production platform. Honest boundaries:
 
 - Offline mock results are **not** a substitute for real model quality.
-- Real LLM was **verified once against a live DeepSeek-compatible endpoint**; Real Web Search is implemented but **not verified against a live API**.
+- Real LLM and Real Web Search (Tavily) were **verified against live APIs** during pre-publication smoke testing (not sustained production testing).
 - Session state is **in-memory** (no persistence, no checkpointing).
 - Completeness is judged by **deterministic rules**, not model scoring.
 - This is **not** a production-grade distributed execution layer.

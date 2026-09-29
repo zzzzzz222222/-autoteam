@@ -57,14 +57,19 @@ EXPECTED_OUTPUT_TO_TYPE: dict[str, ArtifactType] = {
 def _flatten_json(value: object) -> object:
     """Reduce a nested LLM-proposed value to a scalar/string deterministically.
 
-    Real providers may return ``structured_data`` values (or ``sources`` items)
-    that are dicts/lists rather than plain strings. Downstream consumers only
-    render these as ``f"{k}={v}"`` lines, so any nested structure is safely
-    flattened to a stable JSON string here — Schema constrains, Code validates.
+    Real providers may return ``structured_data`` values (or ``sources`` items,
+    tool ``arguments``) that are dicts/lists/numbers rather than plain strings.
+    Downstream consumers only render these as ``f"{k}={v}"`` lines, so any
+    nested structure is safely flattened to a stable JSON string here, and
+    scalar numbers are coerced to strings — Schema constrains, Code validates.
     """
     if isinstance(value, (dict, list, tuple)):
         return _json.dumps(value, ensure_ascii=False)
-    return value
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    return str(value)
 
 
 class AgentDeliverable(BaseModel):

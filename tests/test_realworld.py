@@ -528,6 +528,96 @@ def test_api_key_never_leaks_into_trace_or_artifacts(monkeypatch):
     assert "sk-super-secret-key-42" not in dumped
 
 
+def test_web_search_tavily_post_protocol(monkeypatch):
+    """The real adapter must speak Tavily's protocol: POST + Bearer header +
+    JSON body {"query": ...} + content field in results (fallback to snippet)."""
+    monkeypatch.setenv("AUTOTEAM_WEB_SEARCH_URL", "https://api.tavily.com/search")
+    monkeypatch.setenv("AUTOTEAM_WEB_SEARCH_API_KEY", "sk-test-key-123")
+    payload = {
+        "results": [
+            {
+                "title": "AI agent report",
+                "url": "https://example.com/ai-agents",
+                "content": "Tavily-style content field",
+            },
+        ]
+    }
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return str(payload).replace("'", '"').encode()
+
+    captured: dict = {}
+
+    def fake_urlopen(request, timeout):
+        captured["method"] = request.get_method()
+        captured["url"] = request.full_url
+        captured["auth"] = request.get_header("Authorization")
+        # urllib normalizes header names (Content-Type -> Content-type)
+        captured["content_type"] = request.get_header("Content-Type") or request.get_header(
+            "Content-type"
+        )
+        captured["body"] = request.data.decode() if request.data else ""
+        return FakeResponse()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    result = ToolRegistry(mode="auto").run("web_search", "ai agents")
+    assert result.offline is False
+    assert captured["method"] == "POST"
+    assert captured["auth"] == "Bearer sk-test-key-123"
+    assert captured["content_type"] == "application/json"
+    assert "ai agents" in captured["body"]
+    assert result.search_results[0].snippet == "Tavily-style content field"
+    assert result.search_results[0].source == "web"
+
+    # degrade path: missing results must still fall back offline, never crash
+    def bad_urlopen(request, timeout):
+        class Bad:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"results": "nope"}'
+
+        return Bad()
+
+    monkeypatch.setattr("urllib.request.urlopen", bad_urlopen)
+    degraded = ToolRegistry(mode="auto").run("web_search", "ai agents")
+    assert degraded.offline is True
+    assert degraded.error
+
+
+def test_flatten_json_coerces_numeric_scalars():
+    """Real LLMs emit int/float tool args (e.g. max_results=10) that the
+    ToolCall / AgentDeliverable validators must coerce into str deterministically."""
+    tool_call = ToolCall(
+        tool_name="web_search",
+        arguments={"query": "ai agents", "max_results": 10},
+    )
+    assert tool_call.arguments == {"query": "ai agents", "max_results": "10"}
+
+    from app.runtime.artifacts import AgentDeliverable
+
+    deliverable = AgentDeliverable(
+        title="t",
+        structured_data={"count": 3, "score": 0.5, "nested": {"a": 1}},
+    )
+    assert deliverable.structured_data == {
+        "count": "3",
+        "score": "0.5",
+        "nested": '{"a": 1}',
+    }
+
+
 # ---------------------------------------------------------------------------
 # Demo (offline) + timeout plumbing
 # ---------------------------------------------------------------------------

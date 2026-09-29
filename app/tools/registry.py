@@ -155,8 +155,9 @@ def web_search(query: str) -> ToolResult:
     """Dual-mode web search.
 
     Offline (default): deterministic results, ``source_type=offline_mock``,
-    empty URLs — real URLs are never fabricated. Real: one HTTP GET against
-    ``AUTOTEAM_WEB_SEARCH_URL`` with ``AUTOTEAM_WEB_SEARCH_API_KEY``; any
+    empty URLs — real URLs are never fabricated. Real: one HTTPS POST against
+    ``AUTOTEAM_WEB_SEARCH_URL`` (Tavily-compatible: JSON body ``{"query": ...}``
+    with ``Authorization: Bearer``) using ``AUTOTEAM_WEB_SEARCH_API_KEY``; any
     failure (timeout, bad response, validation) degrades to the offline
     results plus a structured ``error`` — never a crash, never the API key.
     """
@@ -165,12 +166,17 @@ def web_search(query: str) -> ToolResult:
     if api_key and base_url:
         try:
             import json as _json
-            import urllib.parse
             import urllib.request
 
-            url = f"{base_url}?q={urllib.parse.quote(query)}"
+            body = _json.dumps({"query": query}).encode("utf-8")
             request = urllib.request.Request(
-                url, headers={"Authorization": f"Bearer {api_key}"}
+                base_url,
+                data=body,
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
             )
             with urllib.request.urlopen(request, timeout=10) as response:
                 data = _json.loads(response.read().decode())
@@ -185,7 +191,8 @@ def web_search(query: str) -> ToolResult:
                     SearchResult(
                         title=str(item.get("title", "")),
                         url=item["url"],
-                        snippet=str(item.get("snippet", "")),
+                        # Tavily returns "content"; generic adapters use "snippet".
+                        snippet=str(item.get("content") or item.get("snippet", "")),
                         source="web",
                     )
                 )

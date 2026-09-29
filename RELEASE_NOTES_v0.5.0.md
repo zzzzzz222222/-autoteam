@@ -10,7 +10,7 @@
 | Real Agent Runtime | implemented & tested |
 | LLM Provider abstraction (mock + OpenAI/DeepSeek compatible) | implemented |
 | Executable ToolRegistry | implemented & tested |
-| Web Search adapter (offline / real) | implemented |
+| Web Search adapter (offline / **Tavily** real) | implemented & tested |
 | Calculator (safe AST, no `eval`) | implemented & tested |
 | Local Knowledge tool (workspace-scoped, path-traversal protected) | implemented & tested |
 | Sources + Evidence provenance | implemented & tested |
@@ -35,7 +35,7 @@ Runs the task _"分析 AI Agent 市场，并设计一个面向中小企业的 Ag
 
 ## Verification
 
-- `pytest -q` — **174 passed**
+- `pytest -q` — **176 passed**
 - `ruff check .` — clean
 - v0.1.0 / v0.2.0 / v0.3.0 / v0.4.0 regression — **pass**
 - v0.5.0 tests (36) — **pass**
@@ -43,8 +43,9 @@ Runs the task _"分析 AI Agent 市场，并设计一个面向中小企业的 Ag
 
 ## Real API Verification
 
-A live **DeepSeek-compatible API request** was executed with a real API key during the final pre-publication smoke test (key kept only in a gitignored local `.env`, never committed). Verified end-to-end:
+Live API calls were executed during the final pre-publication smoke test with real keys (kept only in a gitignored local `.env`, never committed). Verified end-to-end:
 
+**Real LLM (DeepSeek-compatible)** — Implemented + Actually Verified:
 - Real LLM request — executed against the live endpoint, meaningful content returned
 - Dynamic multi-agent execution — full session completed with `SUCCESS`
 - Artifact generation — real intermediate artifacts for each agent
@@ -52,7 +53,13 @@ A live **DeepSeek-compatible API request** was executed with a real API key duri
 - Downstream artifact consumption — downstream agent read upstream artifact context
 - Final artifact generation — final deliverable assembled from real results
 
-**Real LLM — Implemented + Actually Verified.** **Real Web Search — Implemented but not externally verified** (no vendor API credentials were available in the verification environment). The offline fallback for web search (structured `offline_mock` results, empty URLs, no fabricated data) is verified; it must not be mistaken for a real web-search verification.
+**Real Web Search (Tavily)** — Implemented + Actually Verified:
+- Adapter speaks Tavily's protocol (POST + Bearer + JSON `{"query": ...}`, `content` field, response validation)
+- Live request returned real results with real URLs
+- Agent called `web_search` via `ToolRegistry` and consumed the results into Sources/Evidence
+- Offline fallback re-verified separately: removal of the config degrades to structured `offline_mock` results (empty URLs, no fabricated data) without crashing
+
+API keys are configured by the user in a gitignored local `.env` and are never committed; CI stays fully offline.
 
 ## Known Limitations
 

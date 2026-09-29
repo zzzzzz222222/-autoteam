@@ -11,7 +11,7 @@
 | 能力 | 状态 | 实测证据 |
 |------|------|----------|
 | **Real LLM（DeepSeek）** | Implemented + **Actually Verified** ✅ | 真实请求 1.5–7s 返回；多轮会话 `SUCCESS`、产出 final_artifact 与 Evidence/Sources |
-| **Real Web Search** | Implemented + **Not Verified** ⚠️ | 无 Web Search API Key 可配置，仅验证离线降级路径（`offline_mock`，空 URL，不伪造） |
+| **Real Web Search（Tavily）** | Implemented + **Actually Verified** ✅ | 真实 POST 请求返回 5 条结果（真实 URL/标题/snippet）；Agent 实际调用 `web_search`；证据进入 Sources/Evidence |
 | Calculator（AST 安全计算） | Implemented + **Actually Verified** ✅ | `safe_calculate(...)` 返回 `210.0`；非法表达式被拒绝，无 eval |
 | Local Knowledge（路径校验） | Implemented + **Actually Verified** ✅ | 正常读取 + 路径穿越被拒绝（`.env`/`secret`/相对路径出界） |
 | Tool Calling（Schema 约束 + retry） | Implemented + **Actually Verified** ✅ | `_real_execution` 调用循环受 `max_tool_calls`/`max_iterations` 约束；retry 吸收单次模型输出随机性 |
@@ -35,7 +35,18 @@
 
 ---
 
-## 3. Real LLM 端到端验证结果
+## 3. Real Web Search Verification（Tavily）
+
+- **Provider**: Tavily Search API（`https://api.tavily.com/search`，POST + Bearer + JSON body `{"query": ...}`）
+- **Status**: Actually Verified ✅
+- **Real results**: yes（最小请求返回 5 条真实结果）
+- **Real URLs**: yes（全部为真实 `http(s)` URL，无伪造）
+- **Offline fallback**: verified（移除配置后自动降级为 `offline_mock`、空 URL，不崩溃；`pytest` 离线全绿 176）
+- **最小改动**：仅修改 `app/tools/registry.py` 的 `web_search` real 分支（GET+Bearer+`snippet` → POST+Bearer+兼容 `content`/`snippet`）；保留 Offline fallback / Mock / ToolRegistry API / AgentRuntime / Scheduler / Dynamic Team / Artifact / Evidence 全部不动
+- **新增回归测试**：`test_web_search_tavily_post_protocol`（POST 方法、Bearer、JSON body、content 字段、降级路径）、`test_flatten_json_coerces_numeric_scalars`（real LLM 数字参数压平）
+- **过程中发现的确定性 bug 并已修复**：`_flatten_json` 只压平 dict/list/tuple，int/float 标量原样返回导致 `ToolCall.arguments.max_results=10` 报 ValidationError（真实 LLM 随机输出 `"10"` 或 `10`）——修复为标量统一转 str
+
+## 4. Real LLM 端到端验证结果
 
 - Provider 连接：`get_llm_provider()` 在配置 Key 时返回 `OpenAILLMProvider`，实测真实内容返回（有实质标题，非空）。
 - **完整会话**（分析 AI Agent 市场 + 产品方案，含 Market/Technology/Requirement/Proposal/Report 多角色）：**连续多轮运行全部 `SUCCESS`**，`final_artifact` 生成，Evidence/Sources 随物传递到最终报告。
@@ -43,29 +54,29 @@
 
 ---
 
-## 4. 回归验证（确保不破坏 Offline Mode）
+## 5. 回归验证（确保不破坏 Offline Mode）
 
 | 项 | 结果 |
 |----|------|
-| `pytest`（无 `.env` / 真实 CI 条件） | **174 passed** ✅ |
+| `pytest`（无 `.env` / 真实 CI 条件） | **176 passed** ✅（含本批次新增 2 个协议回归测试） |
 | `ruff check .`（全仓） | **All checks passed** ✅ |
 | Offline Demo `examples/real_world_demo.py` | 无 Key → `Execution mode: OFFLINE MOCK`，`Final Status: SUCCESS`，`offline_mock` 源、空 URL ✅ |
 | UI 测试 `tests/test_ui.py` | **28 passed** ✅ |
 
-> 说明：本机因放置真实 `.env`，`app/config.py` 的 `load_dotenv()` 会在导入时注入 Key，导致两个期望「无 Key」的测试本机转红。此为本机环境副作用，非代码缺陷——在移走 `.env` 的干净环境（等同于 CI）下 **174 全绿**。未改动任何测试逻辑。
+> 说明：本机因放置真实 `.env`，`app/config.py` 的 `load_dotenv()` 会在导入时注入 Key，导致期望「无 Key」的测试本机转红。此为本机环境副作用，非代码缺陷——在移走 `.env` 的干净环境（等同于 CI）下 **176 全绿**。未改动任何既有测试逻辑。
 
 ---
 
-## 5. 安全与 Git
+## 6. 安全与 Git
 
-- 真实 Key 仅存于 `.env`（**已被 `.gitignore` 忽略**），未写入任何代码 / README / 日志 / Artifact / Event / 报告。
-- 全仓扫描：未检出真实 API Key 片段（仅以"前缀未落盘"方式核对，未在报告中重现任何真实字符）；`sk-*` 命中仅为测试内**伪造假 Key**（用于断言 Key 不被打印）与一处 docstring 误报。
+- 真实 Key（DeepSeek + Tavily）仅存于本地 `.env`（**已被 `.gitignore` 忽略**），未写入任何代码 / README / 日志 / Artifact / Event / 报告 / 本报告。
+- 全仓扫描：未检出真实 API Key 片段（含 DeepSeek 与 Tavily 前缀）；测试内 `sk-*` 均为**伪造假 Key**（用于断言 Key 不被打印）。
 - 扫描绝对路径（`H:\xxcx` / `工作\项目`）：无命中。
-- `git status`：仅 `app/runtime/artifacts.py`、`app/runtime/decomposer.py` 两个修复文件改动；临时 `_smoke_*.py` **已全部删除**；`.env.example` 已恢复。
+- `git status`：仅 `app/tools/registry.py`（Tavily 协议）、`app/runtime/artifacts.py`（数字压平）、`tests/test_realworld.py`（2 个新测试）改动；临时 `_smoke_*.py` **已全部删除**。
 - 未 push、未建 remote、未发 Release。
 
 ---
 
-## 6. 工程状态结论
+## 7. 工程状态结论
 
-**已具备进入 GitHub Release Preparation 的条件。** Real LLM 全链路已实际跑通（会话级稳定 `SUCCESS`），Offline 回归全绿，安全无泄漏，工作区干净。唯一未实测的是 Real Web Search（缺厂商 Key），但离线降级路径已验证正确（不伪造 URL/数据），发布不阻塞——README 中相应标记为 `Not Verified` 即可，确保如实标注验证边界。
+**已具备进入 GitHub Release Preparation 的条件。** Real LLM 与 Real Web Search（Tavily）双双实际跑通：会话级稳定 `SUCCESS`、真实搜索结果进入 Sources/Evidence、final_artifact 生成；Offline 回归全绿（176 passed），安全无泄漏，工作区干净。README 已同步标注 `Real LLM / Real Web Search = Actually Verified`。
