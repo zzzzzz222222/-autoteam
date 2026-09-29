@@ -18,12 +18,16 @@ const messages: Record<Locale, Record<string, string>> = {
     // app shell
     'app.name': 'AutoTeam',
     'app.tagline': 'Dynamic multi-agent execution',
+    'app.version': 'v0.5.0',
+    'app.mode_label': '运行模式',
+    'nav.workspace': '工作台',
+    'nav.runs': '运行',
     'nav.overview': '总览',
     'nav.team': '团队',
     'nav.artifacts': '交付物',
     'nav.result': '结果',
     'nav.lang': 'EN',
-    'app.version': 'v0.5.0',
+    'topbar.idle': '尚未选择任务',
 
     // status badge
     'status.pending': 'PENDING',
@@ -36,6 +40,8 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // workspace
     'workspace.title': 'AutoTeam',
+    'workspace.eyebrow': 'AUTOTEAM',
+    'workspace.hero': 'Build a team for your task.',
     'workspace.subtitle':
       '动态多智能体执行 —— 描述一个任务，观看团队规划、协作并交付结果。',
     'workspace.input_label': '你希望你的 AI 团队做什么？',
@@ -61,6 +67,13 @@ const messages: Record<Locale, Record<string, string>> = {
     // execution
     'exec.overview': '总览',
     'exec.running': '运行中…',
+    'exec.run': 'RUN',
+    'exec.agents_count': '智能体',
+    'exec.layers_count': '层级',
+    'exec.team_activity': 'TEAM ACTIVITY',
+    'exec.no_activity': '等待该智能体事件…',
+    'exec.provenance': 'PROVENANCE',
+    'exec.mode_truth': '所有状态与数字均来自真实执行事件。',
     'exec.events': '事件',
     'exec.mode': '模式',
     'exec.team': '团队',
@@ -74,13 +87,23 @@ const messages: Record<Locale, Record<string, string>> = {
     'exec.artifact_src': '来源',
     'exec.artifact_ev': '证据',
     'exec.timeline': '执行',
-    'exec.tool_calls': '工具调用',
+    'exec.tool_calls': 'TOOL CALLS',
     'exec.no_tool_calls': '暂无工具调用',
     'exec.offline': '离线',
     'exec.web': '网页',
-    'exec.evidence': '证据',
-    'exec.sources': '来源',
+    'exec.evidence': 'Evidence',
+    'exec.sources': 'Sources',
     'exec.waiting': '等待事件…',
+
+    // activity labels (derived from real event types)
+    'act.started': '开始',
+    'act.tool_web': '搜索网页',
+    'act.tool_offline': '离线工具',
+    'act.artifact': '产出交付物',
+    'act.output': '整理结果',
+    'act.failed': '失败',
+    'act.retrying': '重试中',
+    'act.replanned': '已重规划',
 
     // team
     'team.dag': '依赖图谱',
@@ -88,13 +111,27 @@ const messages: Record<Locale, Record<string, string>> = {
     'team.agents': '智能体',
     'team.edges': '边',
     'team.layer': '层级',
+    'team.layer_label': '执行层级',
     'team.artifact_flow': '交付物流向',
     'team.select_agent': '选择智能体以查看详情。',
-    'team.formation': '组建过程',
+    'team.formation': 'TEAM FORMATION',
+    'team.canvas': 'TEAM CANVAS',
+    'team.details': 'AGENT DETAILS',
+    'team.capabilities': 'cap',
     'team.attempt': '尝试次数',
+    'team.why': 'WHY THIS TEAM',
+
+    // formation rail
+    'tf.task_understanding': '理解任务',
+    'tf.capability_discovery': '发现能力',
+    'tf.role_allocation': '分配角色',
+    'tf.agent_factory': '创建智能体',
+    'tf.dag_validation': '校验 DAG',
+    'tf.execution': '开始执行',
 
     // artifacts
     'art.none': '暂无交付物 —— 团队仍在工作中。',
+    'art.flow': 'COLLABORATION FLOW',
     'art.expand': '展开',
     'art.collapse': '收起',
     'art.upstream': '上游',
@@ -102,9 +139,17 @@ const messages: Record<Locale, Record<string, string>> = {
     'art.sources': '来源',
     'art.evidence': '证据',
     'art.offline': '(离线)',
+    'art.consumed_by': '消费方',
+    'art.consumed': '被消费于',
+    'art.artifact_label': 'ARTIFACT',
+    'art.content': '内容',
+    'art.mode_real': '执行模式：Real · 来源真实',
+    'art.mode_offline': '执行模式：Offline · 来源为 offline_mock',
 
     // result
     'result.not_ready': '最终交付物尚未就绪 —— 团队仍在工作中。',
+    'result.deliverable': 'FINAL DELIVERABLE',
+    'result.contents': 'CONTENTS',
     'result.assembled': '由真实智能体交付物汇总',
     'result.sources': '来源',
     'result.evidence': '证据',
@@ -120,12 +165,16 @@ const messages: Record<Locale, Record<string, string>> = {
     // app shell
     'app.name': 'AutoTeam',
     'app.tagline': 'Dynamic multi-agent execution',
+    'app.version': 'v0.5.0',
+    'app.mode_label': 'Execution mode',
+    'nav.workspace': 'Workspace',
+    'nav.runs': 'Runs',
     'nav.overview': 'Overview',
     'nav.team': 'Team',
     'nav.artifacts': 'Artifacts',
     'nav.result': 'Result',
     'nav.lang': '中文',
-    'app.version': 'v0.5.0',
+    'topbar.idle': 'No task selected',
 
     // status badge
     'status.pending': 'PENDING',
@@ -138,6 +187,8 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // workspace
     'workspace.title': 'AutoTeam',
+    'workspace.eyebrow': 'AUTOTEAM',
+    'workspace.hero': 'Build a team for your task.',
     'workspace.subtitle':
       'Dynamic multi-agent execution — describe a task and watch a team plan, collaborate and deliver.',
     'workspace.input_label': 'What do you want your AI team to do?',
@@ -163,6 +214,13 @@ const messages: Record<Locale, Record<string, string>> = {
     // execution
     'exec.overview': 'Overview',
     'exec.running': 'Running…',
+    'exec.run': 'RUN',
+    'exec.agents_count': 'agents',
+    'exec.layers_count': 'layers',
+    'exec.team_activity': 'TEAM ACTIVITY',
+    'exec.no_activity': 'No events for this agent yet…',
+    'exec.provenance': 'PROVENANCE',
+    'exec.mode_truth': 'Every status and number comes from real execution events.',
     'exec.events': 'events',
     'exec.mode': 'mode',
     'exec.team': 'Team',
@@ -176,7 +234,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'exec.artifact_src': 'Sources',
     'exec.artifact_ev': 'Evidence',
     'exec.timeline': 'Execution',
-    'exec.tool_calls': 'Tool calls',
+    'exec.tool_calls': 'TOOL CALLS',
     'exec.no_tool_calls': 'No tool calls yet',
     'exec.offline': 'offline',
     'exec.web': 'web',
@@ -184,19 +242,43 @@ const messages: Record<Locale, Record<string, string>> = {
     'exec.sources': 'Sources',
     'exec.waiting': 'Waiting for events…',
 
+    // activity labels (derived from real event types)
+    'act.started': 'started',
+    'act.tool_web': 'web search',
+    'act.tool_offline': 'offline tool',
+    'act.artifact': 'artifact',
+    'act.output': 'output',
+    'act.failed': 'failed',
+    'act.retrying': 'retrying',
+    'act.replanned': 'replanned',
+
     // team
     'team.dag': 'Dependency graph',
     'team.waiting': 'Waiting for team formation…',
     'team.agents': 'agents',
     'team.edges': 'edges',
     'team.layer': 'Execution layer',
+    'team.layer_label': 'Execution layer',
     'team.artifact_flow': 'Artifact flow',
     'team.select_agent': 'Select an agent to inspect it.',
-    'team.formation': 'Formation',
+    'team.formation': 'TEAM FORMATION',
+    'team.canvas': 'TEAM CANVAS',
+    'team.details': 'AGENT DETAILS',
+    'team.capabilities': 'cap',
     'team.attempt': 'Attempt',
+    'team.why': 'WHY THIS TEAM',
+
+    // formation rail
+    'tf.task_understanding': 'Task understanding',
+    'tf.capability_discovery': 'Capability discovery',
+    'tf.role_allocation': 'Role allocation',
+    'tf.agent_factory': 'Agent factory',
+    'tf.dag_validation': 'DAG validation',
+    'tf.execution': 'Execution',
 
     // artifacts
     'art.none': 'No artifacts yet — the team is still working.',
+    'art.flow': 'COLLABORATION FLOW',
     'art.expand': 'Expand',
     'art.collapse': 'Collapse',
     'art.upstream': 'Upstream',
@@ -204,9 +286,17 @@ const messages: Record<Locale, Record<string, string>> = {
     'art.sources': 'Sources',
     'art.evidence': 'Evidence',
     'art.offline': '(offline)',
+    'art.consumed_by': 'consumed by',
+    'art.consumed': 'Consumed by',
+    'art.artifact_label': 'ARTIFACT',
+    'art.content': 'Content',
+    'art.mode_real': 'Execution mode: Real · live sources',
+    'art.mode_offline': 'Execution mode: Offline · offline_mock sources',
 
     // result
     'result.not_ready': 'The final deliverable is not ready yet — the team is still working.',
+    'result.deliverable': 'FINAL DELIVERABLE',
+    'result.contents': 'CONTENTS',
     'result.assembled': 'Assembled from real agent artifacts',
     'result.sources': 'Sources',
     'result.evidence': 'Evidence',

@@ -4,242 +4,291 @@ import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { api } from '@/api/client'
 import { useTeamStore } from '@/stores/team'
 import { useI18n } from '@/i18n'
-import StatusBadge from '@/components/StatusBadge.vue'
-import type { ArtifactDto, TeamResponse } from '@/types'
+import AgentStatus from '@/components/AgentStatus.vue'
+import type { ExecutionEvent, TeamAgent } from '@/types'
 
 const props = defineProps<{ taskId: string }>()
 const route = useRoute()
 const store = useTeamStore()
 const { t } = useI18n()
 
-const team = ref<TeamResponse | null>(null)
-const artifacts = ref<ArtifactDto[]>([])
+const team = ref<TeamAgent[]>([])
+const error = ref<string | null>(null)
 const selectedAgentId = ref<string | null>(null)
-const toolError = ref<string | null>(null)
 
 const isOverview = computed(() => route.name === 'execution')
 
-const filteredEvents = computed(() => store.events)
-const toolEvents = computed(() => store.events.filter((e) => e.type === 'TOOL_CALLED'))
+// ---- derived from store (all SSE/API driven, nothing fabricated) -------
+const snapshot = computed(() => store.current)
+
+const summary = computed(() => {
+  const snap = snapshot.value
+  return {
+    agents: snap?.agent_names ? Object.keys(snap.agent_names).length : team.value.length,
+    layers: snap?.layers?.length ?? 0,
+    sources: snap?.final_artifact?.sources.length ?? 0,
+    evidence: snap?.final_artifact?.evidence.length ?? 0,
+    status: snap?.status ?? 'idle',
+    mode: snap?.mode ?? 'offline',
+    runId: snap?.run_id ?? '',
+  }
+})
+
+// latest event type per agent -> drives the "doing" verb (from real events)
+function agentDoing(agentId: string): string {
+  const last = [...store.events].reverse().find((e) => e.agent_id === agentId)
+  if (!last) return ''
+  const map: Record<string, string> = {
+    AGENT_STARTED: t('act.started'),
+    TOOL_CALLED: t(last.metadata.offline ? 'act.tool_offline' : 'act.tool_web'),
+    AGENT_OUTPUT: t('act.output'),
+    ARTIFACT_CREATED: t('act.artifact'),
+    AGENT_FAILED: t('act.failed'),
+    AGENT_RETRY: t('act.retrying'),
+    AGENT_REPLANNED: t('act.replanned'),
+  }
+  return map[last.type] ?? ''
+}
+
+const groupedEvents = computed(() => {
+  const groups: Record<string, ExecutionEvent[]> = {}
+  for (const event of store.events) {
+    if (!event.agent_id) continue
+    if (!groups[event.agent_id]) groups[event.agent_id] = []
+    groups[event.agent_id].push(event)
+  }
+  return groups
+})
+
+const orderedAgents = computed(() => {
+  const agents = team.value.length ? team.value : snapshotAgents.value
+  return agents
+})
+
+const snapshotAgents = computed<TeamAgent[]>(() => {
+  const snap = snapshot.value
+  if (!snap) return []
+  return Object.entries(snap.agent_names).map(([id, name]) => ({
+    id,
+    name,
+    role: '',
+    capabilities: [],
+    tools: [],
+    layer: 0,
+    status: snap.agent_results[id]?.status ?? 'pending',
+    attempt: snap.agent_results[id]?.attempt ?? 1,
+  }))
+})
+
+async function loadTeam() {
+  try {
+    const res = await api.getTeam(props.taskId)
+    team.value = res.agents
+    if (!selectedAgentId.value && res.agents.length) {
+      selectedAgentId.value = res.agents[0].id
+    }
+  } catch (err) {
+    error.value = String(err)
+  }
+}
 
 function formatTime(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleTimeString('zh-CN', { hour12: false })
 }
 
-function agentName(agentId: string): string {
-  return store.current?.agent_names?.[agentId] ?? agentId ?? ''
-}
-
-async function refreshDerived() {
-  if (!store.current) return
-  try {
-    const [teamRes, artRes] = await Promise.all([
-      api.getTeam(props.taskId),
-      api.getArtifacts(props.taskId),
-    ])
-    team.value = teamRes
-    artifacts.value = artRes.artifacts
-    if (!selectedAgentId.value && teamRes.agents.length) {
-      selectedAgentId.value = teamRes.agents[0].id
-    }
-  } catch (err) {
-    toolError.value = String(err)
+function eventGlyph(type: string): string {
+  switch (type) {
+    case 'TOOL_CALLED':
+      return 'tool'
+    case 'ARTIFACT_CREATED':
+    case 'AGENT_OUTPUT':
+      return 'artifact'
+    case 'AGENT_RETRY':
+    case 'AGENT_FAILED':
+    case 'AGENT_REPLANNED':
+      return 'retry'
+    default:
+      return 'event'
   }
 }
 
-let timer: ReturnType<typeof setInterval> | null = null
+function glyphColor(kind: string): string {
+  switch (kind) {
+    case 'tool':
+      return 'text-blue-600'
+    case 'artifact':
+      return 'text-emerald-600'
+    case 'retry':
+      return 'text-amber-600'
+    default:
+      return 'text-zinc-400'
+  }
+}
+
+function glyphLabel(event: ExecutionEvent): string {
+  switch (event.type) {
+    case 'TOOL_CALLED':
+      return event.metadata.offline ? t('act.tool_offline') : t('act.tool_web')
+    case 'ARTIFACT_CREATED':
+      return t('act.artifact')
+    case 'AGENT_OUTPUT':
+      return t('act.output')
+    case 'AGENT_STARTED':
+      return t('act.started')
+    case 'AGENT_RETRY':
+      return t('act.retrying')
+    case 'AGENT_FAILED':
+      return t('act.failed')
+    case 'AGENT_REPLANNED':
+      return t('act.replanned')
+    default:
+      return event.type.toLowerCase()
+  }
+}
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   void store.loadTask(props.taskId).then(() => {
-    void refreshDerived()
+    void loadTeam()
   })
   store.startStream(props.taskId)
-  timer = setInterval(() => void refreshDerived(), 3000)
+  pollTimer = setInterval(() => {
+    if (snapshot.value?.status === 'running') void loadTeam()
+  }, 4000)
 })
 
-onUnmounted(() => {
+onUnmounted(cleanup)
+onBeforeRouteLeave(cleanup)
+
+function cleanup() {
   store.stopStream()
-  if (timer) clearInterval(timer)
-})
-
-onBeforeRouteLeave(() => {
-  store.stopStream()
-  if (timer) clearInterval(timer)
-})
-
-const selectedAgent = computed(() =>
-  team.value?.agents.find((a) => a.id === selectedAgentId.value),
-)
-
-const downstream = computed(() => {
-  if (!selectedAgent.value || !team.value) return []
-  return team.value.edges
-    .filter((e) => e.source === selectedAgent.value!.id)
-    .map((e) => team.value!.agents.find((a) => a.id === e.target))
-    .filter(Boolean)
-})
-
-const selectedArtifact = computed(() =>
-  artifacts.value.find((a) => a.agent_id === selectedAgentId.value),
-)
-
-function eventColor(type: string): string {
-  switch (type) {
-    case 'TASK_STARTED':
-    case 'TEAM_FORMED':
-      return 'text-zinc-500'
-    case 'AGENT_STARTED':
-      return 'text-sky-600'
-    case 'TOOL_CALLED':
-      return 'text-indigo-600'
-    case 'ARTIFACT_CREATED':
-    case 'AGENT_OUTPUT':
-      return 'text-emerald-600'
-    case 'AGENT_FAILED':
-    case 'AGENT_RETRY':
-    case 'AGENT_REPLANNED':
-      return 'text-amber-600'
-    case 'TASK_COMPLETED':
-      return 'text-zinc-700'
-    default:
-      return 'text-zinc-500'
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
   }
 }
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-7xl px-6 py-6">
-    <!-- Task header -->
-    <div class="mb-6">
-      <div class="flex items-center justify-between gap-4">
-        <h1 class="truncate text-lg font-semibold text-zinc-900">
-          {{ store.current?.task || t('exec.running') }}
+  <div class="mx-auto w-full max-w-6xl px-8 py-8">
+    <!-- Run header (contextual bar, not a card) -->
+    <div class="mb-8 flex items-end justify-between gap-6">
+      <div class="min-w-0">
+        <p class="tok-eyebrow mb-1.5">{{ t('exec.run') }}</p>
+        <h1 class="truncate text-xl font-semibold tracking-tight text-zinc-900">
+          {{ snapshot?.task || t('exec.running') }}
         </h1>
-        <StatusBadge :status="store.current?.status || 'pending'" />
+        <p class="mt-1 font-mono text-[11px] text-zinc-400">{{ summary.runId }}</p>
       </div>
-      <p v-if="store.current" class="mt-1 text-xs text-zinc-400">
-        {{ store.current.run_id }} · {{ t('exec.mode') }} {{ store.current.mode }} · {{ store.current.event_count }} {{ t('exec.events') }}
-      </p>
-      <p v-if="toolError" class="mt-1 text-sm text-red-600">{{ toolError }}</p>
+      <div class="hidden shrink-0 gap-8 text-right sm:flex">
+        <div>
+          <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.agents }}</p>
+          <p class="text-[11px] text-zinc-400">{{ t('exec.agents_count') }}</p>
+        </div>
+        <div>
+          <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.layers }}</p>
+          <p class="text-[11px] text-zinc-400">{{ t('exec.layers_count') }}</p>
+        </div>
+        <div>
+          <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.sources }}</p>
+          <p class="text-[11px] text-zinc-400">{{ t('exec.sources') }}</p>
+        </div>
+      </div>
     </div>
 
-    <!-- Execution overview -->
-    <div v-if="isOverview" class="grid grid-cols-12 gap-4">
-      <!-- Team sidebar -->
-      <aside class="col-span-3 space-y-4">
-        <div class="rounded-lg border border-zinc-200 bg-white">
-          <div class="border-b border-zinc-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            {{ t('exec.team') }}
-          </div>
-          <ul class="divide-y divide-zinc-100">
-            <li v-for="agent in team?.agents ?? []" :key="agent.id">
-              <button
-                type="button"
-                class="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm transition-colors hover:bg-zinc-50"
-                :class="{ 'bg-zinc-50': selectedAgentId === agent.id }"
-                @click="selectedAgentId = agent.id"
-              >
-                <span class="font-medium text-zinc-800">{{ agent.name }}</span>
-                <StatusBadge :status="(store.agentStatuses as Record<string, string>)[agent.id] || agent.status" />
-              </button>
-            </li>
-            <li v-if="!team?.agents.length" class="px-3 py-2.5 text-xs text-zinc-400">
-              {{ t('exec.team_forming') }}
-            </li>
-          </ul>
-        </div>
+    <!-- Overview: Live Team Activity -->
+    <div v-if="isOverview" class="grid grid-cols-12 gap-10">
+      <!-- Agent column (activity stream per agent) -->
+      <div class="col-span-8 space-y-7">
+        <p class="tok-eyebrow">{{ t('exec.team_activity') }}</p>
 
-        <!-- Selected agent details -->
-        <div v-if="selectedAgent" class="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
-          <p class="text-xs font-semibold uppercase tracking-wide text-zinc-400">{{ t('exec.agent_details') }}</p>
-          <p class="mt-2 font-medium text-zinc-900">{{ selectedAgent.name }}</p>
-          <dl class="mt-2 space-y-1.5 text-xs text-zinc-600">
-            <div class="flex justify-between gap-2">
-              <dt class="text-zinc-400">{{ t('exec.capabilities') }}</dt>
-              <dd class="text-right">{{ (selectedAgent.capabilities || []).join(', ') || '—' }}</dd>
-            </div>
-            <div class="flex justify-between gap-2">
-              <dt class="text-zinc-400">{{ t('exec.tools') }}</dt>
-              <dd class="text-right">{{ (selectedAgent.tools || []).join(', ') || '—' }}</dd>
-            </div>
-            <div class="flex justify-between gap-2">
-              <dt class="text-zinc-400">{{ t('exec.layer') }}</dt>
-              <dd>{{ selectedAgent.layer }}</dd>
-            </div>
-            <div v-if="downstream.length" class="flex justify-between gap-2">
-              <dt class="text-zinc-400">{{ t('exec.feeds') }}</dt>
-              <dd class="text-right">{{ downstream.map((a) => a!.name).join(', ') }}</dd>
-            </div>
-          </dl>
-          <div v-if="selectedArtifact" class="mt-3 border-t border-zinc-100 pt-2 text-xs">
-            <p class="mb-1 font-medium text-zinc-600">{{ t('exec.artifact') }}</p>
-            <p class="text-zinc-500">{{ selectedArtifact.title || selectedArtifact.artifact_id }}</p>
-            <p class="text-zinc-400">
-              {{ t('exec.artifact_src') }} {{ selectedArtifact.source_records.length }} · {{ t('exec.artifact_ev') }} {{ selectedArtifact.evidence.length }}
-            </p>
-          </div>
-        </div>
-      </aside>
+        <div v-if="error" class="text-sm text-red-600">{{ error }}</div>
 
-      <!-- Execution timeline -->
-      <section class="col-span-6 rounded-lg border border-zinc-200 bg-white">
-        <div class="flex items-center justify-between border-b border-zinc-100 px-3 py-2">
-          <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">{{ t('exec.timeline') }}</span>
-          <span class="text-xs text-zinc-400">
-            {{ filteredEvents.length }} {{ t('exec.events') }}
-          </span>
-        </div>
-        <div class="h-[560px] overflow-y-auto px-3 py-2">
-          <ol v-if="filteredEvents.length" class="space-y-1.5">
-            <li v-for="event in filteredEvents" :key="event.event_id" class="flex gap-3 text-sm">
-              <span class="shrink-0 font-mono text-xs text-zinc-400">
+        <div
+          v-for="agent in orderedAgents"
+          :key="agent.id"
+          class="at-fade-in border-b border-zinc-200 pb-6"
+        >
+          <div class="flex items-baseline gap-3">
+            <AgentStatus :status="(store.agentStatuses as Record<string, string>)[agent.id] || agent.status" />
+            <span class="text-[14px] font-semibold text-zinc-900">{{ agent.name }}</span>
+            <span class="text-[12px] text-zinc-400">
+              {{ agentDoing(agent.id) || '·' }}
+            </span>
+          </div>
+
+          <div v-if="(groupedEvents[agent.id] ?? []).length" class="mt-2.5 space-y-1.5">
+            <div
+              v-for="event in groupedEvents[agent.id]"
+              :key="event.event_id"
+              class="flex items-center gap-3 text-[13px]"
+            >
+              <span class="w-16 shrink-0 font-mono text-[11px] text-zinc-400">
                 {{ formatTime(event.timestamp) }}
               </span>
-              <span class="font-mono text-xs font-medium" :class="eventColor(event.type)">
-                {{ event.type }}
+              <span
+                class="w-16 shrink-0 text-[11px] font-medium"
+                :class="glyphColor(eventGlyph(event.type))"
+              >
+                {{ glyphLabel(event) }}
               </span>
-              <span class="min-w-0 flex-1 truncate text-zinc-600">
-                <template v-if="event.agent_id">{{ agentName(event.agent_id) }} — </template>{{ event.message }}
-                <template v-if="event.type === 'TOOL_CALLED' && event.metadata.offline">
-                  <span class="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500">{{ t('exec.offline') }}</span>
-                </template>
-              </span>
-            </li>
-          </ol>
-          <p v-else class="py-8 text-center text-sm text-zinc-400">{{ t('exec.waiting') }}</p>
-        </div>
-      </section>
-
-      <!-- Right rail: tool calls + provenance counters -->
-      <aside class="col-span-3 space-y-4">
-        <div class="rounded-lg border border-zinc-200 bg-white">
-          <div class="border-b border-zinc-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            {{ t('exec.tool_calls') }}
+              <span class="min-w-0 truncate text-zinc-600">{{ event.message }}</span>
+            </div>
           </div>
-          <ul class="divide-y divide-zinc-100 px-3 py-1 text-xs">
-            <li v-for="event in toolEvents.slice().reverse()" :key="event.event_id" class="flex items-center justify-between gap-2 py-2">
-              <span class="font-mono text-zinc-700">{{ (event.metadata.tool || 'tool') }}</span>
-              <span v-if="event.metadata.offline" class="rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500">{{ t('exec.offline') }}</span>
-              <span v-else class="rounded bg-emerald-50 px-1 py-0.5 text-[10px] text-emerald-600">{{ t('exec.web') }}</span>
+          <p v-else class="mt-1.5 text-[12px] text-zinc-300">{{ t('exec.no_activity') }}</p>
+        </div>
+
+        <p v-if="!orderedAgents.length" class="py-12 text-center text-sm text-zinc-400">
+          {{ t('exec.waiting') }}
+        </p>
+      </div>
+
+      <!-- Right rail: provenance + mode truth -->
+      <aside class="col-span-4 space-y-8">
+        <div>
+          <p class="tok-eyebrow mb-2.5">{{ t('exec.tool_calls') }}</p>
+          <ul class="space-y-1.5">
+            <li
+              v-for="event in store.events.filter((e) => e.type === 'TOOL_CALLED').reverse().slice(0, 8)"
+              :key="event.event_id"
+              class="flex items-center justify-between text-[13px]"
+            >
+              <span class="font-mono text-zinc-700">{{ event.metadata.tool || 'tool' }}</span>
+              <span
+                class="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                :class="event.metadata.offline ? 'bg-zinc-100 text-zinc-500' : 'bg-emerald-50 text-emerald-700'"
+              >
+                {{ event.metadata.offline ? 'offline' : 'web' }}
+              </span>
             </li>
-            <li v-if="!toolEvents.length" class="py-2 text-zinc-400">{{ t('exec.no_tool_calls') }}</li>
+            <li v-if="!store.events.some((e) => e.type === 'TOOL_CALLED')" class="text-[12px] text-zinc-300">
+              {{ t('exec.no_tool_calls') }}
+            </li>
           </ul>
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="rounded-lg border border-zinc-200 bg-white p-3">
-            <p class="text-2xl font-semibold text-zinc-900">{{ store.evidenceCount }}</p>
-            <p class="text-xs text-zinc-500">{{ t('exec.evidence') }}</p>
+
+        <div>
+          <p class="tok-eyebrow mb-2.5">{{ t('exec.provenance') }}</p>
+          <div class="flex gap-8">
+            <div>
+              <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.evidence }}</p>
+              <p class="text-[11px] text-zinc-400">{{ t('exec.evidence') }}</p>
+            </div>
+            <div>
+              <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.sources }}</p>
+              <p class="text-[11px] text-zinc-400">{{ t('exec.sources') }}</p>
+            </div>
           </div>
-          <div class="rounded-lg border border-zinc-200 bg-white p-3">
-            <p class="text-2xl font-semibold text-zinc-900">{{ store.sourceCount }}</p>
-            <p class="text-xs text-zinc-500">{{ t('exec.sources') }}</p>
-          </div>
+          <p class="mt-3 text-[11px] text-zinc-400">
+            {{ t('exec.mode_truth') }}
+          </p>
         </div>
       </aside>
     </div>
 
-    <!-- Child route (team / artifacts / result) -->
-    <RouterView v-if="!isOverview" v-slot="{ Component }">
+    <!-- Child phase (team / artifacts / result) -->
+    <RouterView v-else v-slot="{ Component }">
       <component :is="Component" :task-id="props.taskId" />
     </RouterView>
   </div>

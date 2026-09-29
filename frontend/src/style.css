@@ -1,6 +1,26 @@
 @import 'tailwindcss';
 
+/* ---------------------------------------------------------------------------
+   AutoTeam V2 — design tokens (Editorial + AI Workspace + Developer Tool)
+   Palette: near-white paper, near-black ink, warm neutral grays.
+   No purple glow, no acid gradients, no glassmorphism.
+--------------------------------------------------------------------------- */
+
 :root {
+  --at-bg: #fafaf8;
+  --at-bg-elevated: #ffffff;
+  --at-fg: #18181b;
+  --at-secondary: #71717a;
+  --at-muted: #a1a1aa;
+  --at-faint: #d4d4d8;
+  --at-border: #e4e4e7;
+  --at-border-strong: #d4d4d8;
+  --at-accent: #18181b;
+  --at-success: #059669;
+  --at-warning: #d97706;
+  --at-error: #dc2626;
+  --at-running: #2563eb;
+
   color-scheme: light;
 }
 
@@ -12,123 +32,214 @@ body,
 }
 
 body {
-  background: #fafafa;
-  color: #18181b;
+  background: var(--at-bg);
+  color: var(--at-fg);
   font-family:
+    Inter,
     ui-sans-serif,
     system-ui,
     -apple-system,
+    BlinkMacSystemFont,
     'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
     'PingFang SC',
     'Microsoft YaHei',
     sans-serif;
   font-size: 14px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Restrained, professional theme (Light / Linear-like). */
+code,
+pre,
+kbd,
+.mono {
+  font-family:
+    'JetBrains Mono',
+    'SFMono-Regular',
+    ui-monospace,
+    Menlo,
+    Consolas,
+    monospace;
+  font-size: 0.9em;
+}
+
 a {
   color: inherit;
   text-decoration: none;
 }
 
-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.875em;
+/* --- editorial micro-typography ---------------------------------------- */
+.tok-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--at-muted);
 }
 
-.prose-markdown {
-  line-height: 1.7;
+.tok-title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--at-fg);
 }
 
-.prose-markdown h1,
-.prose-markdown h2,
-.prose-markdown h3 {
-  margin: 1.25rem 0 0.5rem;
+.tok-hairline {
+  height: 1px;
+  background: var(--at-border);
+}
+
+/* subtle scrollbars that match the palette */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--at-faint) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--at-faint);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --- status glyphs (pure lifecycle, not personality) ------------------- */
+.at-status-pulse {
+  animation: at-pulse 1.8s ease-in-out infinite;
+}
+@keyframes at-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* --- activity item fade-in (SSE-driven) -------------------------------- */
+.at-fade-in {
+  animation: at-fade 0.35s ease-out both;
+}
+@keyframes at-fade {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --- Markdown document styling ------------------------------------------- */
+.md-doc {
+  line-height: 1.75;
+  color: var(--at-fg);
+  font-size: 14px;
+}
+.md-doc h1,
+.md-doc h2,
+.md-doc h3,
+.md-doc h4 {
   font-weight: 600;
   line-height: 1.35;
+  letter-spacing: -0.01em;
 }
-
-.prose-markdown h1 {
-  font-size: 1.4rem;
+.md-doc h1 {
+  font-size: 20px;
+  margin: 0 0 1rem;
 }
-
-.prose-markdown h2 {
-  font-size: 1.15rem;
-  border-bottom: 1px solid #e4e4e7;
-  padding-bottom: 0.4rem;
+.md-doc h2 {
+  font-size: 16px;
+  margin: 2rem 0 0.6rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--at-border);
 }
-
-.prose-markdown h3 {
-  font-size: 1rem;
+.md-doc h3 {
+  font-size: 14px;
+  margin: 1.5rem 0 0.4rem;
 }
-
-.prose-markdown p {
-  margin: 0.5rem 0;
+.md-doc p {
+  margin: 0.6rem 0;
 }
-
-.prose-markdown ul,
-.prose-markdown ol {
-  margin: 0.5rem 0;
-  padding-left: 1.5rem;
+.md-doc ul,
+.md-doc ol {
+  margin: 0.6rem 0;
+  padding-left: 1.4rem;
 }
-
-.prose-markdown ul {
+.md-doc ul {
   list-style: disc;
 }
-
-.prose-markdown ol {
+.md-doc ol {
   list-style: decimal;
 }
-
-.prose-markdown li {
-  margin: 0.25rem 0;
+.md-doc li {
+  margin: 0.2rem 0;
 }
-
-.prose-markdown code {
-  background: #f4f4f5;
-  border: 1px solid #e4e4e7;
-  border-radius: 4px;
+.md-doc code {
+  background: #f4f4f2;
+  border: 1px solid var(--at-border);
+  border-radius: 3px;
   padding: 0.1rem 0.3rem;
+  font-size: 0.86em;
 }
-
-.prose-markdown pre {
-  background: #18181b;
+.md-doc pre {
+  background: #17171a;
   color: #fafafa;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  padding: 0.8rem 1rem;
   overflow-x: auto;
-  margin: 0.75rem 0;
+  margin: 0.8rem 0;
 }
-
-.prose-markdown pre code {
+.md-doc pre code {
   background: transparent;
   border: none;
   color: inherit;
   padding: 0;
 }
-
-.prose-markdown blockquote {
-  border-left: 3px solid #d4d4d8;
-  padding-left: 0.75rem;
-  color: #71717a;
-  margin: 0.75rem 0;
+.md-doc blockquote {
+  border-left: 3px solid var(--at-faint);
+  padding-left: 0.8rem;
+  color: var(--at-secondary);
+  margin: 0.8rem 0;
 }
-
-.prose-markdown table {
+.md-doc table {
   border-collapse: collapse;
-  margin: 0.75rem 0;
+  margin: 0.8rem 0;
+  width: 100%;
 }
-
-.prose-markdown th,
-.prose-markdown td {
-  border: 1px solid #e4e4e7;
+.md-doc th,
+.md-doc td {
+  border: 1px solid var(--at-border);
   padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.md-doc th {
+  background: #f4f4f2;
+  font-weight: 600;
+}
+.md-doc hr {
+  border: none;
+  border-top: 1px solid var(--at-border);
+  margin: 1.5rem 0;
 }
 
-.prose-markdown th {
-  background: #f4f4f5;
-  font-weight: 600;
+/* --- route transition ----------------------------------------------------- */
+.view-enter-active,
+.view-leave-active {
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+.view-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.view-leave-to {
+  opacity: 0;
 }

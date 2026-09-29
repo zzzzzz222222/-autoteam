@@ -30,24 +30,10 @@ VERSION = "0.5.0"
 
 
 def _serialize_event(event: dict[str, Any]) -> str:
-    """One SSE ``data:`` frame with an ``event:`` name for browser listeners."""
-    event_type = event["type"]
-    sse_name = {
-        "TASK_STARTED": "task_started",
-        "TEAM_FORMED": "team_formed",
-        "AGENT_READY": "agent_ready",
-        "AGENT_STARTED": "agent_started",
-        "TOOL_CALLED": "tool_called",
-        "AGENT_OUTPUT": "agent_output",
-        "ARTIFACT_CREATED": "artifact_created",
-        "ARTIFACT_REJECTED": "artifact_rejected",
-        "AGENT_FAILED": "agent_failed",
-        "AGENT_RETRY": "agent_retry",
-        "AGENT_REPLANNED": "agent_replanned",
-        "PROVIDER_FALLBACK": "provider_fallback",
-        "TASK_COMPLETED": "task_completed",
-    }.get(event_type, "event")
-    return f"event: {sse_name}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+    """One SSE ``data:`` frame. We keep the event *type* inside the JSON payload
+    (``event.type``) instead of the SSE ``event:`` name so browser
+    ``EventSource.onmessage`` receives every frame without per-type listeners."""
+    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
 def _handle_or_404(task_id: str):
