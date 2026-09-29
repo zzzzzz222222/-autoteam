@@ -35,7 +35,7 @@ Runs the task _"分析 AI Agent 市场，并设计一个面向中小企业的 Ag
 
 ## Verification
 
-- `pytest -q` — **176 passed**
+- `pytest -q` — **186 passed**
 - `ruff check .` — clean
 - v0.1.0 / v0.2.0 / v0.3.0 / v0.4.0 regression — **pass**
 - v0.5.0 tests (36) — **pass**
@@ -61,10 +61,21 @@ Live API calls were executed during the final pre-publication smoke test with re
 
 API keys are configured by the user in a gitignored local `.env` and are never committed; CI stays fully offline.
 
+## Web UI (finalization)
+
+The three historical Streamlit pages (`app/ui.py` / `ui_dynamic.py` / `ui_live.py`) are kept as legacy demos and remain covered by tests. The new product entry is a single **Vue 3 + TypeScript + Vite + Tailwind** frontend over a thin **FastAPI API/SSE** layer:
+
+- `frontend/` — Workspace (task + mode → Build Team & Run), Execution (live SSE timeline, team sidebar, tool calls, evidence/sources), Team (real dynamic DAG), Artifacts, Result (final Markdown + sources + evidence, copy/save).
+- `app/api/` — `GET /api/health`, `POST /api/tasks`, `GET /api/tasks/{id}`, `/team`, `/events`, `/artifacts`, `/result`, and `GET /api/tasks/{id}/stream` (SSE replaying the Core's real `ExecutionTrace`).
+- The API layer is a pass-through around the untouched `app.runtime.session.execute_task` (background thread, same pattern as the v0.2 Live View). No orchestration was re-implemented; no Core module was modified.
+- Backend serves the built SPA too, so `uvicorn app.api.main:app --port 8000` alone exposes the whole product.
+- Real LLM (DeepSeek) and Real Web Search (Tavily) remain Actually Verified and are both exposed through the UI's *Real LLM* mode; Offline mode still works with zero configuration.
+
 ## Known Limitations
 
 - Offline mock results are not a substitute for real model quality.
 - Session state is in-memory (no persistence / checkpointing).
+- The API run registry is in-memory (restart loses run history — acceptable for a demo UI).
 - Completeness is judged by deterministic rules, not model scoring.
 - Not a production-grade distributed execution platform.
 

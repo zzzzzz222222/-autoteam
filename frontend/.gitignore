@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+.DS_Store
+
+# vue-tsc -b emits compiled artifacts next to sources; only keep .ts sources
+*.tsbuildinfo
+/vite.config.js
+/vite.config.d.ts
+/vite.config.js.map
+/vite.config.d.ts.map

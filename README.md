@@ -20,7 +20,7 @@ Task
 
 AutoTeam is an **experimental**, offline-safe, deterministic-by-default framework. Everything runs with **no API key and no network**; a real LLM and real web search are optional, plug-in capabilities.
 
-**Python 3.11+ · `pytest` 174/174 · `ruff` clean · CI: Python 3.11 & 3.12**
+**Python 3.11+ · `pytest` 186/186 · `ruff` clean · CI: Python 3.11 & 3.12**
 
 ---
 
@@ -194,10 +194,40 @@ python examples/autonomous_task_demo.py
 
 # run the v0.5.0 killer demo
 python examples/real_world_demo.py
-
-# launch the Streamlit UI
-streamlit run app/ui.py
 ```
+
+## Web UI (AutoTeam — single product entry)
+
+The current product UI is a Vue 3 + TypeScript frontend served by the FastAPI backend (the three historical Streamlit pages below are kept as **Legacy / Historical demos** — they are no longer the product entry point).
+
+```bash
+# 1. backend (FastAPI + SSE on :8000)
+uvicorn app.api.main:app --reload --port 8000
+
+# 2. frontend (Vite dev server on :5173, proxies /api to :8000)
+cd frontend
+npm install
+npm run dev
+```
+
+Open **http://localhost:5173** — enter a task, choose *Offline* or *Real LLM*, then **Build Team & Run**. The Execution page streams real Core events over SSE (agent status, tool calls, artifacts, evidence/sources) and the Result page shows the assembled final deliverable.
+
+Alternatively build the frontend once and let the backend serve it on the same port:
+
+```bash
+cd frontend && npm run build && cd ..
+uvicorn app.api.main:app --port 8000   # SPA served at http://localhost:8000
+```
+
+There is also a one-command launcher once the frontend is built (or with `--dev` to also run the Vite dev server):
+
+```bash
+python scripts/start_web.py        # backend only, serves the built SPA
+python scripts/start_web.py --dev  # backend + vite dev
+```
+
+> Legacy Streamlit pages still run unchanged for historical inspection:
+> `streamlit run app/ui.py` (v0.1–0.3 demo) · `app/ui_dynamic.py` · `app/ui_live.py` (v0.4 live view). Tests keep covering them; they are not the official UI anymore.
 
 ## Offline Mode
 
@@ -287,15 +317,38 @@ Current verified status:
 
 | Check | Result |
 |---|---|
-| `pytest -q` | 174 passed |
+| `pytest -q` | 186 passed |
 | `ruff check .` | clean |
+| Web API (`tests/test_api.py`) | health / create / team / events / artifacts / result + E2E, offline |
 | v0.1.0 regression | pass |
 | v0.2.0 regression | pass |
 | v0.3.0 regression | pass |
 | v0.4.0 regression | pass |
 | v0.5.0 tests (36) | pass |
 | Offline demos | run in CI, no API key |
-| UI | import smoke-tested in CI |
+| UI | import smoke-tested in CI; Vue frontend `npm run build` passes |
+
+## Web UI
+
+The product UI (introduced at the v0.5.0 finalization) is a single Vue 3 + TypeScript frontend:
+
+```
+frontend/
+├── src/
+│   ├── views/          Workspace · Execution · Team · Artifacts · Result
+│   ├── components/     StatusBadge (status strictly from backend events)
+│   ├── stores/team.ts  Pinia store (SSE-driven live state)
+│   └── api/client.ts   typed client for the FastAPI endpoints
+app/api/
+├── main.py             FastAPI app (optionally serves the built SPA)
+├── routes.py           /api/health · /api/tasks · /team · /events · /artifacts · /result · /stream
+├── runs.py             background-thread run registry (reuses execute_task)
+└── models.py           DTOs
+```
+
+- **SSE** (`GET /api/tasks/{id}/stream`) replays the Core's real `ExecutionTrace` — no faked events, no timers in the frontend.
+- Agent status, tool calls, artifacts, evidence and sources all come from the existing Core objects.
+- `npm run build` passes (vue-tsc strict + Vite production build).
 
 ## Security
 

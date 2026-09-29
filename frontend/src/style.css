@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #fafafa;
+  color: #18181b;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Restrained, professional theme (Light / Linear-like). */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875em;
+}
+
+.prose-markdown {
+  line-height: 1.7;
+}
+
+.prose-markdown h1,
+.prose-markdown h2,
+.prose-markdown h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.prose-markdown h1 {
+  font-size: 1.4rem;
+}
+
+.prose-markdown h2 {
+  font-size: 1.15rem;
+  border-bottom: 1px solid #e4e4e7;
+  padding-bottom: 0.4rem;
+}
+
+.prose-markdown h3 {
+  font-size: 1rem;
+}
+
+.prose-markdown p {
+  margin: 0.5rem 0;
+}
+
+.prose-markdown ul,
+.prose-markdown ol {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+
+.prose-markdown ul {
+  list-style: disc;
+}
+
+.prose-markdown ol {
+  list-style: decimal;
+}
+
+.prose-markdown li {
+  margin: 0.25rem 0;
+}
+
+.prose-markdown code {
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+}
+
+.prose-markdown pre {
+  background: #18181b;
+  color: #fafafa;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+}
+
+.prose-markdown pre code {
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 0;
+}
+
+.prose-markdown blockquote {
+  border-left: 3px solid #d4d4d8;
+  padding-left: 0.75rem;
+  color: #71717a;
+  margin: 0.75rem 0;
+}
+
+.prose-markdown table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.prose-markdown th,
+.prose-markdown td {
+  border: 1px solid #e4e4e7;
+  padding: 0.4rem 0.6rem;
+}
+
+.prose-markdown th {
+  background: #f4f4f5;
+  font-weight: 600;
+}
