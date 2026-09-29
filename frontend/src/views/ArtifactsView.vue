@@ -71,8 +71,8 @@ function modeHint(): 'real' | 'offline' {
     <div class="mb-8 flex items-end justify-between gap-6">
       <div>
         <p class="tok-eyebrow mb-2">{{ t('art.flow') }}</p>
-        <h1 class="tok-page-title">{{ t('art.flow_title') }}</h1>
-        <p class="mt-2 text-[14px] text-zinc-400">
+        <h1 class="text-[20px] font-semibold tracking-tight text-zinc-900">{{ t('art.flow_title') }}</h1>
+        <p class="mt-2 text-[13px] text-zinc-400">
           {{ ordered.length }} {{ t('art.artifacts_count') }} · {{ t('art.flow_sub') }}
         </p>
       </div>
@@ -80,66 +80,57 @@ function modeHint(): 'real' | 'offline' {
     </div>
 
     <div class="grid grid-cols-12 gap-10">
-      <!-- Collaboration flow: large artifact cards ordered by dependency depth -->
-      <div class="col-span-9">
-        <div v-if="ordered.length" class="space-y-4">
+      <!-- Collaboration flow: compact 2×2 tiles ordered by dependency depth -->
+      <div class="col-span-12">
+        <div v-if="ordered.length" class="grid grid-cols-2 gap-4">
           <template v-for="(artifact, idx) in ordered" :key="artifact.artifact_id">
             <button
               type="button"
-              class="at-card group block w-full overflow-hidden text-left transition-colors"
+              class="at-card group flex min-h-[168px] flex-col text-left transition-colors"
               :class="selectedId === artifact.artifact_id
                 ? 'border-blue-600 ring-2 ring-blue-600/15'
                 : 'hover:border-zinc-400'"
               @click="selectedId = artifact.artifact_id"
             >
-              <div class="flex items-start gap-5 px-6 py-5">
-                <!-- depth index -->
+              <div class="flex items-start gap-4 px-5 pt-5">
                 <span
-                  class="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border font-mono text-[14px] font-medium"
+                  class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border font-mono text-[13px] font-medium"
                   :class="selectedId === artifact.artifact_id
                     ? 'border-blue-600 bg-blue-600 text-white'
                     : 'border-zinc-200 text-zinc-500'"
                 >
                   {{ String(idx + 1).padStart(2, '0') }}
                 </span>
-
                 <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <span class="text-[18px] font-semibold tracking-tight text-zinc-900" :title="artifact.title || artifact.artifact_id">
-                  {{ artifact.title || artifact.artifact_id }}
-                </span>
-                    <span class="rounded bg-zinc-100 px-2 py-0.5 font-mono text-[12px] text-zinc-500">
+                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span class="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight text-zinc-900" :title="artifact.title || artifact.artifact_id">
+                      {{ artifact.title || artifact.artifact_id }}
+                    </span>
+                    <span class="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-500">
                       {{ artifact.output_type }}
                     </span>
                   </div>
-                  <p class="mt-1.5 text-[14px] text-zinc-500">
+                  <p class="mt-1.5 text-[13px] text-zinc-500">
                     {{ t('art.produced_by') }}
                     <span class="font-medium text-zinc-700">{{ artifact.agent_name }}</span>
                   </p>
-                  <div class="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-zinc-400">
-                    <span v-if="artifact.dependencies.length">
-                      {{ artifact.dependencies.length }} {{ t('art.upstream') }}
-                    </span>
-                    <span v-if="consumersOf(artifact).length">
-                      →
-                      {{ t('art.consumed_by') }}
-                      <span class="text-zinc-600">{{ consumersOf(artifact).map((c) => c.agent_name).join(', ') }}</span>
-                    </span>
-                    <span v-if="artifact.source_records.length" class="text-zinc-500">
-                      {{ artifact.source_records.length }} sources
-                    </span>
-                    <span v-if="artifact.evidence.length" class="text-zinc-500">
-                      {{ artifact.evidence.length }} evidence
-                    </span>
-                  </div>
                 </div>
-
                 <span
-                  class="mt-1 shrink-0 text-[16px] font-medium"
+                  class="shrink-0 text-[15px] font-medium"
                   :class="selectedId === artifact.artifact_id ? 'text-blue-600' : 'text-zinc-300'"
                 >
                   →
                 </span>
+              </div>
+              <div class="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-4 pt-3 text-[12px] text-zinc-400">
+                <span v-if="artifact.dependencies.length">
+                  {{ artifact.dependencies.length }} {{ t('art.upstream') }}
+                </span>
+                <span v-if="consumersOf(artifact).length" class="min-w-0 truncate">
+                  → {{ consumersOf(artifact).map((c) => c.agent_name).join(', ') }}
+                </span>
+                <span v-if="artifact.source_records.length">{{ artifact.source_records.length }} sources</span>
+                <span v-if="artifact.evidence.length">{{ artifact.evidence.length }} evidence</span>
               </div>
             </button>
           </template>
@@ -149,110 +140,109 @@ function modeHint(): 'real' | 'offline' {
         </p>
       </div>
 
-      <!-- Detail panel (sticky right) -->
-      <aside class="col-span-3">
-        <div class="sticky top-6">
-          <p class="tok-eyebrow mb-3">{{ t('art.artifact_label') }}</p>
+      <!-- Detail panel (below the list, full width — never blocks the flow) -->
+      <div class="col-span-12">
+        <p class="tok-eyebrow mb-3">{{ t('art.artifact_label') }}</p>
 
-          <div v-if="selected" class="at-card p-5">
+        <div v-if="selected" class="at-card p-6">
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <h2 class="text-[18px] font-semibold tracking-tight text-zinc-900">
               {{ selected.title || selected.artifact_id }}
             </h2>
-            <p class="mt-1 text-[14px] text-zinc-500">
+            <span class="text-[14px] text-zinc-500">
               {{ selected.agent_name }} · {{ selected.output_type }}
-            </p>
+            </span>
+          </div>
 
-            <div class="mt-4 flex gap-6 border-y border-zinc-200 py-3">
-              <div>
-                <p class="tok-metric">{{ selected.source_records.length }}</p>
-                <p class="text-[13px] text-zinc-400">{{ t('art.sources') }}</p>
-              </div>
-              <div>
-                <p class="tok-metric">{{ selected.evidence.length }}</p>
-                <p class="text-[13px] text-zinc-400">{{ t('art.evidence') }}</p>
-              </div>
-              <div>
-                <p class="tok-metric">{{ selected.dependencies.length }}</p>
-                <p class="text-[13px] text-zinc-400">{{ t('art.upstream') }}</p>
-              </div>
+          <div class="mt-4 flex gap-8 border-y border-zinc-200 py-3">
+            <div>
+              <p class="tok-metric">{{ selected.source_records.length }}</p>
+              <p class="text-[13px] text-zinc-400">{{ t('art.sources') }}</p>
             </div>
-
-            <div v-if="selected.dependencies.length" class="mt-4">
-              <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
-                {{ t('art.consumed') }}
-              </p>
+            <div>
+              <p class="tok-metric">{{ selected.evidence.length }}</p>
+              <p class="text-[13px] text-zinc-400">{{ t('art.evidence') }}</p>
+            </div>
+            <div>
+              <p class="tok-metric">{{ selected.dependencies.length }}</p>
+              <p class="text-[13px] text-zinc-400">{{ t('art.upstream') }}</p>
+            </div>
+            <div v-if="consumersOf(selected).length" class="min-w-0">
+              <p class="text-[13px] text-zinc-400">{{ t('art.consumed') }}</p>
               <p class="mt-1 text-[14px] text-zinc-700">
-                {{ consumersOf(selected).map((c) => c.agent_name).join(', ') || '—' }}
+                {{ consumersOf(selected).map((c) => c.agent_name).join(', ') }}
               </p>
             </div>
+          </div>
 
-            <div v-if="Object.keys(selected.structured_data).length" class="mt-5">
+          <div class="mt-5 grid grid-cols-12 gap-8">
+            <div v-if="Object.keys(selected.structured_data).length" class="col-span-5">
               <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
                 {{ t('art.key_data') }}
               </p>
-              <pre class="mt-2 max-h-56 overflow-y-auto rounded bg-zinc-50 p-3 font-mono text-[13px] leading-relaxed text-zinc-600">{{
+              <pre class="mt-2 max-h-72 overflow-y-auto rounded bg-zinc-50 p-3 font-mono text-[13px] leading-relaxed text-zinc-600">{{
                 prettyJson(selected.structured_data)
               }}</pre>
             </div>
 
-            <div class="mt-5">
+            <div class="col-span-7">
               <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
                 {{ t('art.content') }}
               </p>
-              <p class="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap text-[14px] leading-relaxed text-zinc-700">
+              <p class="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-[14px] leading-relaxed text-zinc-700">
                 {{ selected.content }}
               </p>
             </div>
-
-            <div v-if="selected.evidence.length" class="mt-6">
-              <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
-                {{ t('art.evidence') }}
-              </p>
-              <ul class="mt-2 space-y-3">
-                <li v-for="(ev, i) in selected.evidence" :key="i" class="text-[14px]">
-                  <p class="text-zinc-700">
-                    <span class="font-mono text-[11px] text-zinc-300">#{{ i + 1 }}</span> {{ ev.claim }}
-                  </p>
-                  <p class="mt-0.5 pl-5 text-[12px] text-zinc-400">{{ ev.evidence }}</p>
-                </li>
-              </ul>
-            </div>
-
-            <div v-if="selected.source_records.length" class="mt-6">
-              <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
-                {{ t('art.sources') }}
-              </p>
-              <ul class="mt-2 space-y-2 text-[13px]">
-                <li v-for="source in selected.source_records" :key="source.id">
-                  <a
-                    v-if="source.url"
-                    :href="source.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="text-blue-600 underline underline-offset-2 hover:text-blue-700"
-                  >
-                    {{ source.title || source.url }}
-                  </a>
-                  <span v-else class="text-zinc-400">
-                    {{ source.title }} <span class="text-zinc-300">{{ t('art.offline') }}</span>
-                  </span>
-                  <span class="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-500">
-                    {{ source.source_type }}
-                  </span>
-                </li>
-              </ul>
-            </div>
-
-            <p class="mt-6 text-[12px] text-zinc-400">
-              {{ modeHint() === 'real' ? t('art.mode_real') : t('art.mode_offline') }}
-            </p>
           </div>
 
-          <p v-else class="at-card p-5 text-[14px] text-zinc-400">
-            {{ t('art.select') }}
+          <div v-if="selected.evidence.length" class="mt-6">
+            <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
+              {{ t('art.evidence') }}
+            </p>
+            <ul class="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
+              <li v-for="(ev, i) in selected.evidence" :key="i" class="text-[14px]">
+                <p class="text-zinc-700">
+                  <span class="font-mono text-[11px] text-zinc-300">#{{ i + 1 }}</span> {{ ev.claim }}
+                </p>
+                <p class="mt-0.5 pl-5 text-[12px] text-zinc-400">{{ ev.evidence }}</p>
+              </li>
+            </ul>
+          </div>
+
+          <div v-if="selected.source_records.length" class="mt-6">
+            <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
+              {{ t('art.sources') }}
+            </p>
+            <ul class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+              <li v-for="source in selected.source_records" :key="source.id" class="text-[13px]">
+                <a
+                  v-if="source.url"
+                  :href="source.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-blue-600 underline underline-offset-2 hover:text-blue-700"
+                >
+                  {{ source.title || source.url }}
+                </a>
+                <span v-else class="text-zinc-400">
+                  {{ source.title }} <span class="text-zinc-300">{{ t('art.offline') }}</span>
+                </span>
+                <span class="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-500">
+                  {{ source.source_type }}
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <p class="mt-6 text-[12px] text-zinc-400">
+            {{ modeHint() === 'real' ? t('art.mode_real') : t('art.mode_offline') }}
           </p>
         </div>
-      </aside>
+
+        <p v-else class="at-card p-5 text-[14px] text-zinc-400">
+          {{ t('art.select') }}
+        </p>
+      </div>
     </div>
   </div>
 </template>

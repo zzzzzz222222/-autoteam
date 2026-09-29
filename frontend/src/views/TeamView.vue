@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import { useTeamStore } from '@/stores/team'
 import { useI18n } from '@/i18n'
@@ -39,7 +39,8 @@ const executionReached = computed(
 async function load() {
   try {
     team.value = await api.getTeam(props.taskId)
-    if (!selectedAgentId.value && team.value.agents.length) {
+    selectedAgentId.value = null
+    if (team.value.agents.length) {
       selectedAgentId.value = team.value.agents[0].id
     }
   } catch (err) {
@@ -48,6 +49,8 @@ async function load() {
 }
 
 onMounted(load)
+// re-load when switching tasks from the sidebar without navigating away
+watch(() => props.taskId, load)
 
 const selectedAgent = computed(() =>
   team.value?.agents.find((a) => a.id === selectedAgentId.value) ?? null,
@@ -83,9 +86,14 @@ function agentName(id: string): string {
   <div class="mx-auto w-full max-w-[1400px] px-10 py-10">
     <!-- header -->
     <div class="mb-8 flex items-end justify-between gap-6">
-      <div>
+      <div class="min-w-0 max-w-[980px]">
         <p class="tok-eyebrow mb-2">{{ t('team.canvas') }}</p>
-        <h1 class="tok-page-title" :title="store.current?.task || t('exec.running')">{{ store.current?.task || t('exec.running') }}</h1>
+        <h1
+          class="line-clamp-2 text-[15px] font-medium leading-snug text-zinc-700"
+          :title="store.current?.task || t('exec.running')"
+        >
+          {{ store.current?.task || t('exec.running') }}
+        </h1>
         <p class="mt-2 text-[14px] text-zinc-400">
           {{ team?.agents.length ?? 0 }} {{ t('team.agents') }} · {{ team?.edges.length ?? 0 }} {{ t('team.edges') }}
         </p>
@@ -117,8 +125,8 @@ function agentName(id: string): string {
         </div>
       </div>
 
-      <!-- Team canvas: large DAG (columns tolerate overflow via horizontal scroll) -->
-      <div class="col-span-9 min-w-0">
+      <!-- Team canvas: large DAG (full width; horizontal scroll tolerates many layers) -->
+      <div class="col-span-12 min-w-0">
         <div v-if="layerColumns.length" class="flex items-start gap-8 overflow-x-auto pb-2">
           <div v-for="(layer, idx) in layerColumns" :key="idx" class="flex min-w-[180px] flex-1 flex-col gap-5">
             <p class="font-mono text-[13px] uppercase tracking-widest text-zinc-300">
@@ -153,50 +161,51 @@ function agentName(id: string): string {
         </p>
       </div>
 
-      <!-- agent detail -->
-      <aside class="col-span-3">
-        <div class="sticky top-6">
-          <p class="tok-eyebrow mb-3">{{ t('team.details') }}</p>
-          <div v-if="selectedAgent" class="at-card p-5">
-            <div class="flex items-center justify-between">
-              <h3 class="text-[18px] font-semibold text-zinc-900">{{ selectedAgent.name }}</h3>
-              <AgentStatus
-                :status="(store.agentStatuses as Record<string, string>)[selectedAgent.id] || selectedAgent.status"
-                :label="true"
-              />
+      <!-- Agent detail (below the canvas, so the DAG is never blocked) -->
+      <div class="col-span-12">
+        <p class="tok-eyebrow mb-3">{{ t('team.details') }}</p>
+        <div v-if="selectedAgent" class="grid grid-cols-12 gap-10">
+          <div class="col-span-4">
+            <div class="at-card p-5">
+              <div class="flex items-center justify-between">
+                <h3 class="text-[18px] font-semibold text-zinc-900">{{ selectedAgent.name }}</h3>
+                <AgentStatus
+                  :status="(store.agentStatuses as Record<string, string>)[selectedAgent.id] || selectedAgent.status"
+                  :label="true"
+                />
+              </div>
+              <dl class="mt-4 space-y-3 text-[14px]">
+                <div>
+                  <dt class="text-zinc-400">{{ t('exec.capabilities') }}</dt>
+                  <dd class="mt-1 flex flex-wrap gap-1.5">
+                    <span
+                      v-for="cap in selectedAgent.capabilities"
+                      :key="cap"
+                      class="rounded-full bg-zinc-100 px-2.5 py-1 text-[13px] text-zinc-700"
+                    >
+                      {{ cap }}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt class="text-zinc-400">{{ t('exec.tools') }}</dt>
+                  <dd class="mt-0.5 font-mono text-[14px] text-zinc-700">
+                    {{ (selectedAgent.tools || []).join(', ') || '—' }}
+                  </dd>
+                </div>
+                <div class="flex justify-between">
+                  <dt class="text-zinc-400">{{ t('team.layer_label') }}</dt>
+                  <dd>{{ layerOf(selectedAgent.id) + 1 }}</dd>
+                </div>
+                <div class="flex justify-between">
+                  <dt class="text-zinc-400">{{ t('team.attempt') }}</dt>
+                  <dd>#{{ selectedAgent.attempt }}</dd>
+                </div>
+              </dl>
             </div>
-            <dl class="mt-4 space-y-3 text-[14px]">
-              <div>
-                <dt class="text-zinc-400">{{ t('exec.capabilities') }}</dt>
-                <dd class="mt-1 flex flex-wrap gap-1.5">
-                  <span
-                    v-for="cap in selectedAgent.capabilities"
-                    :key="cap"
-                    class="rounded-full bg-zinc-100 px-2.5 py-1 text-[13px] text-zinc-700"
-                  >
-                    {{ cap }}
-                  </span>
-                </dd>
-              </div>
-              <div>
-                <dt class="text-zinc-400">{{ t('exec.tools') }}</dt>
-                <dd class="mt-0.5 font-mono text-[14px] text-zinc-700">
-                  {{ (selectedAgent.tools || []).join(', ') || '—' }}
-                </dd>
-              </div>
-              <div class="flex justify-between">
-                <dt class="text-zinc-400">{{ t('team.layer_label') }}</dt>
-                <dd>{{ layerOf(selectedAgent.id) + 1 }}</dd>
-              </div>
-              <div class="flex justify-between">
-                <dt class="text-zinc-400">{{ t('team.attempt') }}</dt>
-                <dd>#{{ selectedAgent.attempt }}</dd>
-              </div>
-            </dl>
           </div>
-          <p v-else class="at-card p-5 text-[14px] text-zinc-400">{{ t('team.select_agent') }}</p>
 
-          <div v-if="Object.keys(flows).length" class="mt-6">
+          <div v-if="Object.keys(flows).length" class="col-span-4">
             <p class="tok-eyebrow mb-3">{{ t('team.artifact_flow') }}</p>
             <ul class="space-y-2 text-[14px] text-zinc-600">
               <li v-for="(targets, source) in flows" :key="source" class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -207,12 +216,13 @@ function agentName(id: string): string {
             </ul>
           </div>
 
-          <div v-if="team?.explanation" class="mt-6 border-t border-zinc-200 pt-4">
-            <p class="tok-eyebrow mb-2">{{ t('team.why') }}</p>
+          <div v-if="team?.explanation" class="col-span-4">
+            <p class="tok-eyebrow mb-3">{{ t('team.why') }}</p>
             <p class="text-[14px] leading-relaxed text-zinc-500">{{ team.explanation.reasoning }}</p>
           </div>
         </div>
-      </aside>
+        <p v-else class="at-card p-5 text-[14px] text-zinc-400">{{ t('team.select_agent') }}</p>
+      </div>
     </div>
   </div>
 </template>

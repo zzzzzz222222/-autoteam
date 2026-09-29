@@ -116,12 +116,14 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // activity labels (derived from real event types)
     'act.started': '开始',
+    'act.done': '完成',
     'act.tool_web': '搜索网页',
     'act.tool_offline': '离线工具',
     'act.artifact': '产出交付物',
     'act.output': '整理结果',
     'act.failed': '失败',
     'act.retrying': '重试中',
+    'act.retry_ok': '重试成功',
     'act.replanned': '已重规划',
 
     // team
@@ -287,12 +289,14 @@ const messages: Record<Locale, Record<string, string>> = {
 
     // activity labels (derived from real event types)
     'act.started': 'started',
+    'act.done': 'done',
     'act.tool_web': 'web search',
     'act.tool_offline': 'offline tool',
     'act.artifact': 'artifact',
     'act.output': 'output',
     'act.failed': 'failed',
     'act.retrying': 'retrying',
+    'act.retry_ok': 'retry ok',
     'act.replanned': 'replanned',
 
     // team

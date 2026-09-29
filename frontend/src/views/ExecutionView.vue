@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { api } from '@/api/client'
 import { useTeamStore } from '@/stores/team'
@@ -34,8 +34,13 @@ const summary = computed(() => {
   }
 })
 
-// latest event type per agent -> drives the "doing" verb (from real events)
+// latest event type per agent -> drives the "doing" verb (from real events).
+// Final status wins: a retried-then-successful agent reads as "done", not "retrying".
 function agentDoing(agentId: string): string {
+  const finalStatus = snapshot.value?.agent_results?.[agentId]?.status
+  if (finalStatus === 'success') return t('act.done')
+  if (finalStatus === 'failed') return t('act.failed')
+  if (finalStatus !== 'running') return ''
   const last = [...store.events].reverse().find((e) => e.agent_id === agentId)
   if (!last) return ''
   const map: Record<string, string> = {
@@ -44,7 +49,7 @@ function agentDoing(agentId: string): string {
     AGENT_OUTPUT: t('act.output'),
     ARTIFACT_CREATED: t('act.artifact'),
     AGENT_FAILED: t('act.failed'),
-    AGENT_RETRY: t('act.retrying'),
+    AGENT_RETRY: /succeeded|成功/i.test(last.message ?? '') ? t('act.retry_ok') : t('act.retrying'),
     AGENT_REPLANNED: t('act.replanned'),
   }
   return map[last.type] ?? ''
@@ -144,7 +149,8 @@ function glyphLabel(event: ExecutionEvent): string {
     case 'AGENT_STARTED':
       return t('act.started')
     case 'AGENT_RETRY':
-      return t('act.retrying')
+      // backend records AGENT_RETRY after a successful recovery — don't say "retrying"
+      return /succeeded|成功/i.test(event.message ?? '') ? t('act.retry_ok') : t('act.retrying')
     case 'AGENT_FAILED':
       return t('act.failed')
     case 'AGENT_REPLANNED':
@@ -156,15 +162,22 @@ function glyphLabel(event: ExecutionEvent): string {
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
-onMounted(() => {
-  void store.loadTask(props.taskId).then(() => {
+function startTask(taskId: string) {
+  cleanup()
+  team.value = []
+  error.value = null
+  void store.loadTask(taskId).then(() => {
     void loadTeam()
   })
-  store.startStream(props.taskId)
+  store.startStream(taskId)
   pollTimer = setInterval(() => {
     if (snapshot.value?.status === 'running') void loadTeam()
   }, 4000)
-})
+}
+
+onMounted(() => startTask(props.taskId))
+// switching tasks from the sidebar re-initialises the live view
+watch(() => props.taskId, (id) => startTask(id))
 
 onUnmounted(cleanup)
 onBeforeRouteLeave(cleanup)
@@ -184,7 +197,7 @@ function cleanup() {
     <div class="mb-10 flex flex-wrap items-end justify-between gap-6">
       <div class="min-w-0 max-w-[720px]">
         <p class="tok-eyebrow mb-2">{{ t('exec.run') }}</p>
-        <h1 class="tok-page-title truncate" :title="snapshot?.task || t('exec.running')">{{ snapshot?.task || t('exec.running') }}</h1>
+        <h1 class="line-clamp-2 text-[18px] font-semibold leading-snug tracking-tight text-zinc-900" :title="snapshot?.task || t('exec.running')">{{ snapshot?.task || t('exec.running') }}</h1>
         <p class="mt-2 font-mono text-[13px] text-zinc-400">{{ summary.runId }}</p>
       </div>
       <div class="flex shrink-0 gap-10">
@@ -299,7 +312,7 @@ function cleanup() {
 
     <!-- Child phase (team / artifacts / result) -->
     <RouterView v-else v-slot="{ Component }">
-      <component :is="Component" :task-id="props.taskId" />
+      <component :is="Component" :key="props.taskId + String(route.name)" :task-id="props.taskId" />
     </RouterView>
   </div>
 </template>

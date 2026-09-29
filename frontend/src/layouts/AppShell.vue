@@ -206,7 +206,8 @@ function statusLabel(status: string): string {
       <main class="min-h-0 flex-1 overflow-y-auto">
         <RouterView v-slot="{ Component }">
           <Transition name="view" mode="out-in">
-            <component :is="Component" />
+            <!-- key by taskId so switching "recent" runs remounts the view -->
+            <component :is="Component" :key="String(route.params.taskId ?? route.name ?? 'root')" />
           </Transition>
         </RouterView>
       </main>

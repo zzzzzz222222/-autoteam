@@ -191,9 +191,9 @@ a {
 
 /* --- Markdown document (Result / Artifacts) ----------------------------- */
 .md-doc {
-  line-height: 1.75;
+  line-height: 1.65;
   color: var(--at-fg);
-  font-size: 17px;
+  font-size: 13px;
   max-width: 72ch; /* keep long-form reading comfortable on wide screens */
 }
 .md-doc h1,
@@ -205,26 +205,26 @@ a {
   letter-spacing: -0.015em;
 }
 .md-doc h1 {
-  font-size: 30px;
-  margin: 0 0 1.2rem;
+  font-size: 18px;
+  margin: 0 0 0.9rem;
 }
 .md-doc h2 {
-  font-size: 22px;
-  margin: 2.2rem 0 0.7rem;
-  padding-bottom: 0.4rem;
+  font-size: 15px;
+  margin: 1.35rem 0 0.55rem;
+  padding-bottom: 0.35rem;
   border-bottom: 1px solid var(--at-border);
 }
 .md-doc h3 {
-  font-size: 18px;
-  margin: 1.6rem 0 0.5rem;
+  font-size: 13.5px;
+  margin: 1.1rem 0 0.4rem;
 }
 .md-doc p {
-  margin: 0.7rem 0;
+  margin: 0.5rem 0;
 }
 .md-doc ul,
 .md-doc ol {
-  margin: 0.7rem 0;
-  padding-left: 1.5rem;
+  margin: 0.5rem 0;
+  padding-left: 1.35rem;
 }
 .md-doc ul {
   list-style: disc;
@@ -233,22 +233,26 @@ a {
   list-style: decimal;
 }
 .md-doc li {
-  margin: 0.25rem 0;
+  margin: 0.15rem 0;
 }
 .md-doc code {
   background: #f3f3f1;
   border: 1px solid var(--at-border);
   border-radius: 4px;
-  padding: 0.12rem 0.35rem;
-  font-size: 0.86em;
+  padding: 0.08rem 0.28rem;
+  font-size: 0.88em;
 }
 .md-doc pre {
   background: #17171a;
   color: #fafafa;
   border-radius: 8px;
-  padding: 0.9rem 1.1rem;
+  padding: 0.7rem 0.9rem;
   overflow-x: auto;
-  margin: 0.9rem 0;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0.65rem 0;
+  font-size: 12px;
+  line-height: 1.55;
 }
 .md-doc pre code {
   background: transparent;

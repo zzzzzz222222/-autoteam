@@ -20,23 +20,33 @@ export const useTeamStore = defineStore('team', () => {
     }
   }
 
+  let loadSeq = 0
+
   async function loadTask(taskId: string) {
+    const seq = ++loadSeq
     loading.value = true
     error.value = null
     try {
-      current.value = await api.getTask(taskId)
-      events.value = (await api.getEventsHistory(taskId)).events
+      const snap = await api.getTask(taskId)
+      const hist = await api.getEventsHistory(taskId)
+      // ignore stale responses when the user switched tasks mid-flight
+      if (seq !== loadSeq) return
+      current.value = snap
+      events.value = hist.events
     } catch (err) {
-      error.value = String(err)
+      if (seq === loadSeq) error.value = String(err)
     } finally {
-      loading.value = false
+      if (seq === loadSeq) loading.value = false
     }
   }
 
   function startStream(taskId: string) {
     stopStream()
     unsubscribe = subscribeEvents(taskId, (event) => {
-      events.value.push(event)
+      // SSE replays from index 0 — skip frames already loaded via getEventsHistory
+      if (!events.value.some((e) => e.event_id === event.event_id)) {
+        events.value.push(event)
+      }
       void refresh()
     })
     pollTimer = setInterval(() => void refresh(), 2500)
@@ -79,7 +89,7 @@ export const useTeamStore = defineStore('team', () => {
         continue
       }
       if (result.status === 'success') {
-        map[agentId] = result.attempt > 1 ? 'retry' : 'success'
+        map[agentId] = 'success'
       } else if (result.status === 'running') {
         map[agentId] = 'running'
       } else if (result.status === 'failed') {

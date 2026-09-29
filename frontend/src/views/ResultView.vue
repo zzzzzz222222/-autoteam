@@ -76,7 +76,7 @@ function splitSection(section: SectionDto): { title: string } {
     <div v-if="result" class="mb-8 flex flex-wrap items-end justify-between gap-6">
       <div class="min-w-0 max-w-[840px]">
         <p class="tok-eyebrow mb-2">{{ t('result.deliverable') }}</p>
-        <h1 class="tok-page-title" :title="result.title">{{ result.title }}</h1>
+        <h1 class="line-clamp-2 text-[20px] font-semibold leading-snug tracking-tight text-zinc-900" :title="result.title">{{ result.title }}</h1>
         <div class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[14px] text-zinc-400">
           <span class="inline-flex items-center gap-1.5">
             <span
@@ -143,40 +143,44 @@ function splitSection(section: SectionDto): { title: string } {
       </nav>
 
       <!-- Document body (reader) -->
-      <div class="col-span-9 max-w-[940px]">
-        <div class="space-y-10">
+      <div class="col-span-9 max-w-[880px]">
+        <div class="space-y-8">
           <!-- Sections -->
-          <section v-for="(section, idx) in toc" :key="idx" :id="`sec-${idx}`" class="scroll-mt-20">
-            <div class="mb-3 flex items-baseline gap-3">
-              <span class="font-mono text-[14px] text-zinc-300">{{ String(idx + 1).padStart(2, '0') }}</span>
-              <h2 class="text-[28px] font-semibold tracking-tight text-zinc-900">
+          <section v-for="(section, idx) in toc" :key="idx" :id="`sec-${idx}`" class="scroll-mt-16">
+            <div class="mb-2 flex items-baseline gap-3">
+              <span class="font-mono text-[12px] text-zinc-300">{{ String(idx + 1).padStart(2, '0') }}</span>
+              <h2 class="text-[16px] font-semibold tracking-tight text-zinc-900">
                 {{ splitSection(section).title }}
               </h2>
             </div>
-            <p class="mb-5 pl-8 text-[14px] text-zinc-400">
+            <p class="mb-3 pl-7 text-[12px] text-zinc-400">
               {{ section.agent_name }} · {{ section.output_type }}
             </p>
-            <div class="md-doc pl-8" v-html="section.content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')"></div>
-            <div v-if="Object.keys(section.structured_data).length" class="mt-5 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
-              <pre class="overflow-x-auto font-mono text-[13px] leading-relaxed text-zinc-600">{{
+            <div class="md-doc pl-7" v-html="section.content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')"></div>
+            <!-- structured data: collapsed so long JSON never blocks the read -->
+            <details v-if="Object.keys(section.structured_data).length" class="mt-4 rounded-lg border border-zinc-200 bg-zinc-50">
+              <summary class="cursor-pointer select-none px-4 py-2.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-800">
+                Key data · {{ Object.keys(section.structured_data).length }} fields
+              </summary>
+              <pre class="max-h-56 overflow-auto border-t border-zinc-200 px-4 py-3 font-mono text-[12px] leading-relaxed text-zinc-600">{{
                 prettyJson(section.structured_data)
               }}</pre>
-            </div>
+            </details>
           </section>
         </div>
 
         <!-- Sources -->
-        <section class="mt-12 border-t border-zinc-200 pt-8">
-          <h2 class="mb-4 text-[22px] font-semibold tracking-tight text-zinc-900">
+        <section class="mt-10 border-t border-zinc-200 pt-6">
+          <h2 class="mb-3 text-[15px] font-semibold tracking-tight text-zinc-900">
             {{ t('result.sources') }}
-            <span class="ml-2 font-mono text-[14px] font-normal text-zinc-400">{{ sourcesCount }}</span>
+            <span class="ml-2 font-mono text-[12px] font-normal text-zinc-400">{{ sourcesCount }}</span>
           </h2>
-          <ol v-if="result.sources.length" class="space-y-3">
+          <ol v-if="result.sources.length" class="space-y-2">
             <li v-for="(source, i) in result.sources" :key="source.id" class="flex gap-3">
-              <span class="font-mono text-[12px] text-zinc-300">{{ String(i + 1).padStart(2, '0') }}</span>
-              <div class="min-w-0 text-[15px]">
+              <span class="font-mono text-[11px] text-zinc-300">{{ String(i + 1).padStart(2, '0') }}</span>
+              <div class="min-w-0 text-[13px]">
                 <p class="text-zinc-700">{{ source.title }}</p>
-                <p class="mt-0.5 text-[13px] text-zinc-400">
+                <p class="mt-0.5 text-[12px] text-zinc-400">
                   <a
                     v-if="source.url"
                     :href="source.url"
@@ -191,25 +195,25 @@ function splitSection(section: SectionDto): { title: string } {
               </div>
             </li>
           </ol>
-          <p v-else class="text-[15px] text-zinc-400">{{ t('result.no_sources') }}</p>
+          <p v-else class="text-[13px] text-zinc-400">{{ t('result.no_sources') }}</p>
         </section>
 
         <!-- Evidence -->
-        <section class="mt-12">
-          <h2 class="mb-4 text-[22px] font-semibold tracking-tight text-zinc-900">
+        <section class="mt-10">
+          <h2 class="mb-3 text-[15px] font-semibold tracking-tight text-zinc-900">
             {{ t('result.evidence') }}
-            <span class="ml-2 font-mono text-[14px] font-normal text-zinc-400">{{ evidenceCount }}</span>
+            <span class="ml-2 font-mono text-[12px] font-normal text-zinc-400">{{ evidenceCount }}</span>
           </h2>
-          <ul v-if="result.evidence.length" class="space-y-4">
-            <li v-for="(ev, i) in result.evidence" :key="i" class="text-[15px]">
+          <ul v-if="result.evidence.length" class="space-y-3">
+            <li v-for="(ev, i) in result.evidence" :key="i" class="text-[13px]">
               <p class="text-zinc-700">
-                <span class="font-mono text-[12px] text-zinc-300">#{{ i + 1 }}</span> {{ ev.claim }}
-                <span class="font-mono text-[12px] text-zinc-300">→ {{ ev.source_id }}</span>
+                <span class="font-mono text-[11px] text-zinc-300">#{{ i + 1 }}</span> {{ ev.claim }}
+                <span class="font-mono text-[11px] text-zinc-300">→ {{ ev.source_id }}</span>
               </p>
-              <p class="mt-1 pl-6 text-[14px] text-zinc-400">{{ ev.evidence }}</p>
+              <p class="mt-1 pl-5 text-[12px] text-zinc-400">{{ ev.evidence }}</p>
             </li>
           </ul>
-          <p v-else class="text-[15px] text-zinc-400">{{ t('result.no_evidence') }}</p>
+          <p v-else class="text-[13px] text-zinc-400">{{ t('result.no_evidence') }}</p>
         </section>
       </div>
     </div>
