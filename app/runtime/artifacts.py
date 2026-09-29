@@ -11,10 +11,11 @@ Offline artifacts carry ``metadata["source_type"] = "offline_mock"``.
 
 from __future__ import annotations
 
+import json as _json
 from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ArtifactType(str, Enum):
@@ -53,8 +54,35 @@ EXPECTED_OUTPUT_TO_TYPE: dict[str, ArtifactType] = {
 }
 
 
+def _flatten_json(value: object) -> object:
+    """Reduce a nested LLM-proposed value to a scalar/string deterministically.
+
+    Real providers may return ``structured_data`` values (or ``sources`` items)
+    that are dicts/lists rather than plain strings. Downstream consumers only
+    render these as ``f"{k}={v}"`` lines, so any nested structure is safely
+    flattened to a stable JSON string here — Schema constrains, Code validates.
+    """
+    if isinstance(value, (dict, list, tuple)):
+        return _json.dumps(value, ensure_ascii=False)
+    return value
+
+
 class AgentDeliverable(BaseModel):
     """Structured proposal returned by the provider for a dynamic agent."""
+
+    @field_validator("structured_data", mode="before")
+    @classmethod
+    def _flatten_data(cls, value):
+        if isinstance(value, dict):
+            return {k: _flatten_json(v) for k, v in value.items()}
+        return value
+
+    @field_validator("sources", "key_points", mode="before")
+    @classmethod
+    def _flatten_list(cls, value):
+        if isinstance(value, list):
+            return [_flatten_json(item) for item in value]
+        return value
 
     title: str = ""
     summary: str = ""
@@ -87,6 +115,18 @@ class ToolCall(BaseModel):
     """Schema for an LLM-requested tool invocation (never free text)."""
 
     tool_name: str
+
+    @field_validator("arguments", mode="before")
+    @classmethod
+    def _flatten_arguments(cls, value):
+        """Real providers emit scalar arg values (e.g. ``max_results: 10``) that
+        are ints/floats, not strings. Tools read ``arguments.get(...)`` and
+        tolerate non-``str`` only if coerced, so flatten every value to ``str``
+        here — Schema constrains, Code validates."""
+        if isinstance(value, dict):
+            return {k: _flatten_json(v) for k, v in value.items()}
+        return value
+
     arguments: dict[str, str] = Field(default_factory=dict)
 
 

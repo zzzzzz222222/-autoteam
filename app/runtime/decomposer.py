@@ -23,6 +23,7 @@ from app.models.task import Task
 from app.models.topology import Topology, TopologyEdge, TopologyType
 from app.runtime.dynamic_models import DynamicPlan, DynamicSubtask
 from app.runtime.models import SubtaskPlan
+from app.runtime.role_allocation import DynamicRoleAllocator
 from app.runtime.understanding import TaskUnderstanding
 from app.topology.validator import TopologyValidator, compute_parallel_layers
 
@@ -279,5 +280,34 @@ class DynamicDecomposer:
             for dep in subtask.dependencies
         )
         if not nx.is_directed_acyclic_graph(graph):
+            return None
+        # The subtask DAG may be acyclic yet form a cycle once subtasks are
+        # merged into roles (RoleAllocator groups subtasks by primary capability,
+        # collapsing a role-owning two subtasks into one node). Detect the cycle
+        # at the agent level the same way DependencyAnalyzer will, so a real
+        # LLM proposal that would fail downstream is rejected up front and we
+        # fall back to the deterministic rule-based plan instead of crashing.
+        roles = DynamicRoleAllocator().allocate(proposed)
+        role_of = {
+            subtask_id: role.id
+            for role in roles
+            for subtask_id in role.assigned_subtasks
+        }
+        if len(role_of) != len(ids):
+            return None
+        agent_graph = nx.DiGraph()
+        agent_graph.add_nodes_from(role.id for role in roles)
+        agent_edge: set[tuple[str, str]] = set()
+        for subtask in proposed.subtasks:
+            target = role_of[subtask.id]
+            for dep in subtask.dependencies:
+                source = role_of[dep]
+                if source == target:
+                    continue
+                edge = (source, target)
+                if edge not in agent_edge:
+                    agent_edge.add(edge)
+                    agent_graph.add_edge(edge[0], edge[1])
+        if not nx.is_directed_acyclic_graph(agent_graph):
             return None
         return proposed

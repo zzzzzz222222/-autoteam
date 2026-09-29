@@ -399,7 +399,7 @@ python examples/autonomous_task_demo.py
 
 输出运行 ID、动态团队、执行分层、逐 Agent 结果、Artifact 依赖链、失败恢复演示，并把最终成果保存为可读 Markdown（`autoteam_output/<run_id>.md`）。
 
-> 离线模式仅验证编排与协作机制：Agent 输出与工具结果均为标注 `offline_mock` 的确定性桩。真实 LLM 质量未经实测不做基准声明；未连接真实网页搜索后端。
+> 离线模式默认运行：Agent 输出与工具结果均为标注 `offline_mock` 的确定性桩。发布前已用真实 DeepSeek 兼容端点实测过真实 LLM 链路（详见英文版 README 的 Real LLM Verification），但真实网页搜索后端因无厂商凭据未做外部实测；Web Search 离线降级（`offline_mock`、空 URL、不伪造数据）已验证。
 
 ---
 

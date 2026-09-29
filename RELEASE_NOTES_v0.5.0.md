@@ -41,9 +41,18 @@ Runs the task _"分析 AI Agent 市场，并设计一个面向中小企业的 Ag
 - v0.5.0 tests (36) — **pass**
 - Offline killer demo — **runs in CI without an API key** (in this release environment: run locally)
 
-## Real API Status
+## Real API Verification
 
-Real LLM and Real Web Search adapters are **implemented**, but this release environment had **no real API credentials**, so **no live external API calls were verified**. The real adapters are not exercised by CI or tests; search failures degrade to structured offline results; with no key, the provider automatically falls back to the deterministic mock.
+A live **DeepSeek-compatible API request** was executed with a real API key during the final pre-publication smoke test (key kept only in a gitignored local `.env`, never committed). Verified end-to-end:
+
+- Real LLM request — executed against the live endpoint, meaningful content returned
+- Dynamic multi-agent execution — full session completed with `SUCCESS`
+- Artifact generation — real intermediate artifacts for each agent
+- Evidence / Sources — provenance collected and validated
+- Downstream artifact consumption — downstream agent read upstream artifact context
+- Final artifact generation — final deliverable assembled from real results
+
+**Real LLM — Implemented + Actually Verified.** **Real Web Search — Implemented but not externally verified** (no vendor API credentials were available in the verification environment). The offline fallback for web search (structured `offline_mock` results, empty URLs, no fabricated data) is verified; it must not be mistaken for a real web-search verification.
 
 ## Known Limitations
 
