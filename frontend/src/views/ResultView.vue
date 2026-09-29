@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 import { useTeamStore } from '@/stores/team'
 import { useI18n } from '@/i18n'
 import UnitIcon from '@/components/UnitIcon.vue'
+import { prettyJson } from '@/utils/format'
 import type { FinalResultResponse, SectionDto } from '@/types'
 
 const props = defineProps<{ taskId: string }>()
@@ -75,7 +76,7 @@ function splitSection(section: SectionDto): { title: string } {
     <div v-if="result" class="mb-8 flex flex-wrap items-end justify-between gap-6">
       <div class="min-w-0 max-w-[840px]">
         <p class="tok-eyebrow mb-2">{{ t('result.deliverable') }}</p>
-        <h1 class="tok-page-title">{{ result.title }}</h1>
+        <h1 class="tok-page-title" :title="result.title">{{ result.title }}</h1>
         <div class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[14px] text-zinc-400">
           <span class="inline-flex items-center gap-1.5">
             <span
@@ -127,10 +128,11 @@ function splitSection(section: SectionDto): { title: string } {
                 :class="activeSection === idx
                   ? '-ml-px border-blue-600 font-medium text-zinc-900'
                   : 'border-transparent text-zinc-500 hover:text-zinc-800'"
+                :title="splitSection(section).title"
                 @click="selectSection(idx)"
               >
                 <span class="font-mono text-[12px] text-zinc-300">{{ String(idx + 1).padStart(2, '0') }}</span>
-                <span class="mt-0.5 block text-[14px] leading-snug">{{ splitSection(section).title }}</span>
+                <span class="mt-0.5 block truncate text-[14px] leading-snug">{{ splitSection(section).title }}</span>
               </button>
             </li>
           </ul>
@@ -157,7 +159,7 @@ function splitSection(section: SectionDto): { title: string } {
             <div class="md-doc pl-8" v-html="section.content.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')"></div>
             <div v-if="Object.keys(section.structured_data).length" class="mt-5 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
               <pre class="overflow-x-auto font-mono text-[13px] leading-relaxed text-zinc-600">{{
-                JSON.stringify(section.structured_data, null, 2)
+                prettyJson(section.structured_data)
               }}</pre>
             </div>
           </section>

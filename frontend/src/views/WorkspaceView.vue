@@ -170,7 +170,7 @@ onMounted(() => {
                 }"
               />
               <div class="min-w-0">
-                <p class="truncate text-[15px] font-medium text-zinc-800 group-hover:text-blue-700">
+                <p class="truncate text-[15px] font-medium text-zinc-800 group-hover:text-blue-700" :title="run.task">
                   {{ run.task }}
                 </p>
                 <p class="mt-0.5 text-[13px] text-zinc-400">

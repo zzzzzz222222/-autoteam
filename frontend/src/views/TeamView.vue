@@ -22,8 +22,19 @@ const formation = computed(() => [
   { label: t('tf.role_allocation'), done: team.value != null },
   { label: t('tf.agent_factory'), done: team.value != null },
   { label: t('tf.dag_validation'), done: (team.value?.edges?.length ?? 0) >= 0 && team.value != null },
-  { label: t('tf.execution'), done: store.current != null },
+  { label: t('tf.execution'), done: executionReached.value },
 ])
+
+// "execution reached" = the run started; derived from the snapshot, and boolean
+// so a direct deep-link to /team (before the store loads) never shows a mixed
+// state rail (all-blue checks + one grey step).
+const executionReached = computed(
+  () =>
+    store.current != null &&
+    (store.current.started_at != null ||
+      store.current.status === 'running' ||
+      store.current.status === 'success'),
+)
 
 async function load() {
   try {
@@ -74,7 +85,7 @@ function agentName(id: string): string {
     <div class="mb-8 flex items-end justify-between gap-6">
       <div>
         <p class="tok-eyebrow mb-2">{{ t('team.canvas') }}</p>
-        <h1 class="tok-page-title">{{ store.current?.task || t('exec.running') }}</h1>
+        <h1 class="tok-page-title" :title="store.current?.task || t('exec.running')">{{ store.current?.task || t('exec.running') }}</h1>
         <p class="mt-2 text-[14px] text-zinc-400">
           {{ team?.agents.length ?? 0 }} {{ t('team.agents') }} · {{ team?.edges.length ?? 0 }} {{ t('team.edges') }}
         </p>
@@ -106,10 +117,10 @@ function agentName(id: string): string {
         </div>
       </div>
 
-      <!-- Team canvas: large DAG -->
-      <div class="col-span-9">
-        <div v-if="layerColumns.length" class="flex items-start gap-8">
-          <div v-for="(layer, idx) in layerColumns" :key="idx" class="flex min-w-[200px] flex-1 flex-col gap-5">
+      <!-- Team canvas: large DAG (columns tolerate overflow via horizontal scroll) -->
+      <div class="col-span-9 min-w-0">
+        <div v-if="layerColumns.length" class="flex items-start gap-8 overflow-x-auto pb-2">
+          <div v-for="(layer, idx) in layerColumns" :key="idx" class="flex min-w-[180px] flex-1 flex-col gap-5">
             <p class="font-mono text-[13px] uppercase tracking-widest text-zinc-300">
               {{ t('team.layer') }} {{ idx + 1 }}
             </p>

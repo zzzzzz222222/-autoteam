@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import { useTeamStore } from '@/stores/team'
 import { useI18n } from '@/i18n'
+import { prettyJson } from '@/utils/format'
 import type { ArtifactDto } from '@/types'
 
 const props = defineProps<{ taskId: string }>()
@@ -104,9 +105,9 @@ function modeHint(): 'real' | 'offline' {
 
                 <div class="min-w-0 flex-1">
                   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                    <span class="text-[18px] font-semibold tracking-tight text-zinc-900">
-                      {{ artifact.title || artifact.artifact_id }}
-                    </span>
+                <span class="text-[18px] font-semibold tracking-tight text-zinc-900" :title="artifact.title || artifact.artifact_id">
+                  {{ artifact.title || artifact.artifact_id }}
+                </span>
                     <span class="rounded bg-zinc-100 px-2 py-0.5 font-mono text-[12px] text-zinc-500">
                       {{ artifact.output_type }}
                     </span>
@@ -189,8 +190,8 @@ function modeHint(): 'real' | 'offline' {
               <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
                 {{ t('art.key_data') }}
               </p>
-              <pre class="mt-2 max-h-56 overflow-y-auto rounded bg-zinc-50 p-3 font-mono text-[12px] leading-relaxed text-zinc-600">{{
-                JSON.stringify(selected.structured_data, null, 2)
+              <pre class="mt-2 max-h-56 overflow-y-auto rounded bg-zinc-50 p-3 font-mono text-[13px] leading-relaxed text-zinc-600">{{
+                prettyJson(selected.structured_data)
               }}</pre>
             </div>
 

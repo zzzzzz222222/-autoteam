@@ -194,6 +194,7 @@ a {
   line-height: 1.75;
   color: var(--at-fg);
   font-size: 17px;
+  max-width: 72ch; /* keep long-form reading comfortable on wide screens */
 }
 .md-doc h1,
 .md-doc h2,

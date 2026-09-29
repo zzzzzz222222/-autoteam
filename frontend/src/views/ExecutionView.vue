@@ -96,6 +96,14 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleTimeString('zh-CN', { hour12: false })
 }
 
+/** Strip the redundant owner prefix — the agent name is already the section header. */
+function eventMessage(event: ExecutionEvent, agent: TeamAgent): string {
+  const raw = event.message ?? ''
+  const name = agent.name
+  const lower = raw.startsWith(name) ? raw.slice(name.length) : raw
+  return lower.trim().replace(/^[：:\s]+/, '') || raw
+}
+
 function eventGlyph(type: string): string {
   switch (type) {
     case 'TOOL_CALLED':
@@ -176,7 +184,7 @@ function cleanup() {
     <div class="mb-10 flex flex-wrap items-end justify-between gap-6">
       <div class="min-w-0 max-w-[720px]">
         <p class="tok-eyebrow mb-2">{{ t('exec.run') }}</p>
-        <h1 class="tok-page-title truncate">{{ snapshot?.task || t('exec.running') }}</h1>
+        <h1 class="tok-page-title truncate" :title="snapshot?.task || t('exec.running')">{{ snapshot?.task || t('exec.running') }}</h1>
         <p class="mt-2 font-mono text-[13px] text-zinc-400">{{ summary.runId }}</p>
       </div>
       <div class="flex shrink-0 gap-10">
@@ -210,7 +218,7 @@ function cleanup() {
         <div
           v-for="agent in orderedAgents"
           :key="agent.id"
-          class="at-fade-in border-b border-zinc-200 pb-7"
+          class="at-fade-in at-card p-5"
         >
           <div class="flex items-center gap-3">
             <AgentStatus :status="(store.agentStatuses as Record<string, string>)[agent.id] || agent.status" />
@@ -233,7 +241,9 @@ function cleanup() {
               >
                 {{ glyphLabel(event) }}
               </span>
-              <span class="min-w-0 flex-1 truncate text-zinc-600">{{ event.message }}</span>
+              <span class="min-w-0 flex-1 truncate text-zinc-600" :title="event.message">
+                {{ eventMessage(event, agent) }}
+              </span>
             </div>
           </div>
           <p v-else class="mt-2 text-[14px] text-zinc-400">{{ t('exec.no_activity') }}</p>
@@ -252,9 +262,9 @@ function cleanup() {
             <li
               v-for="event in store.events.filter((e) => e.type === 'TOOL_CALLED').reverse().slice(0, 8)"
               :key="event.event_id"
-              class="flex items-center justify-between text-[15px]"
+              class="flex min-w-0 items-center justify-between gap-2 text-[15px]"
             >
-              <span class="font-mono text-zinc-700">{{ event.metadata.tool || 'tool' }}</span>
+              <span class="truncate font-mono text-zinc-700" :title="event.metadata.tool || 'tool'">{{ event.metadata.tool || 'tool' }}</span>
               <span
                 class="rounded-full px-2.5 py-0.5 text-[12px] font-medium"
                 :class="event.metadata.offline ? 'bg-zinc-100 text-zinc-500' : 'bg-emerald-50 text-emerald-700'"

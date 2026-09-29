@@ -72,6 +72,36 @@ function runStatusClass(status: string): string {
       return 'bg-zinc-300'
   }
 }
+
+function statusPillClass(status: string): string {
+  switch (status) {
+    case 'success':
+      return 'bg-emerald-50 text-emerald-700'
+    case 'running':
+      return 'bg-blue-50 text-blue-600'
+    case 'failed':
+      return 'bg-red-50 text-red-600'
+    case 'partial_success':
+      return 'bg-amber-50 text-amber-700'
+    default:
+      return 'bg-zinc-100 text-zinc-500'
+  }
+}
+
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'success':
+      return 'SUCCESS'
+    case 'running':
+      return 'RUNNING'
+    case 'failed':
+      return 'FAILED'
+    case 'partial_success':
+      return 'PARTIAL'
+    default:
+      return status.toUpperCase()
+  }
+}
 </script>
 
 <template>
@@ -136,11 +166,18 @@ function runStatusClass(status: string): string {
         <div class="flex min-w-0 flex-1 items-center gap-3">
           <template v-if="store.current">
             <span class="inline-block h-2 w-2 shrink-0 rounded-full" :class="runStatusClass(runStatus)" />
-            <span class="truncate text-[15px] font-medium text-zinc-800">
+            <span
+              class="truncate text-[15px] font-medium text-zinc-800"
+              :title="store.current.task"
+            >
               {{ store.current.task }}
             </span>
-            <span v-if="runStatus !== 'idle'" class="shrink-0 text-[13px] text-zinc-400">
-              {{ runStatus }}
+            <span
+              v-if="runStatus !== 'idle'"
+              class="shrink-0 rounded-full px-2.5 py-0.5 text-[12px] font-medium"
+              :class="statusPillClass(runStatus)"
+            >
+              {{ statusLabel(runStatus) }}
             </span>
           </template>
           <template v-else>
@@ -152,6 +189,7 @@ function runStatusClass(status: string): string {
           <span
             class="rounded-full border px-2.5 py-1 text-[12px] font-semibold"
             :class="mode === 'real' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-zinc-200 bg-zinc-50 text-zinc-500'"
+            :title="t('app.mode_label')"
           >
             {{ mode === 'real' ? 'REAL' : 'OFFLINE' }}
           </span>
