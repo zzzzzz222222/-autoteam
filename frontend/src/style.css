@@ -1,21 +1,22 @@
 @import 'tailwindcss';
 
 /* ---------------------------------------------------------------------------
-   AutoTeam V2 — design tokens (Editorial + AI Workspace + Developer Tool)
-   Palette: near-white paper, near-black ink, warm neutral grays.
-   No purple glow, no acid gradients, no glassmorphism.
+   AutoTeam V3 — AI Agent Team Workspace
+   Wide, clear, large-but-restrained. Editorial + developer-tool visuals.
+   Palette: warm paper, near-black ink, one restrained blue accent.
 --------------------------------------------------------------------------- */
 
 :root {
   --at-bg: #fafaf8;
   --at-bg-elevated: #ffffff;
   --at-fg: #18181b;
-  --at-secondary: #71717a;
-  --at-muted: #a1a1aa;
-  --at-faint: #d4d4d8;
+  --at-secondary: #52525b;
+  --at-muted: #8e8e97;
+  --at-faint: #c8c8cf;
   --at-border: #e4e4e7;
   --at-border-strong: #d4d4d8;
-  --at-accent: #18181b;
+  --at-accent: #2563eb;
+  --at-accent-soft: #eff4ff;
   --at-success: #059669;
   --at-warning: #d97706;
   --at-error: #dc2626;
@@ -44,7 +45,7 @@ body {
     'PingFang SC',
     'Microsoft YaHei',
     sans-serif;
-  font-size: 14px;
+  font-size: 16px; /* v3: readable base size for desktop distance */
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -61,7 +62,6 @@ kbd,
     Menlo,
     Consolas,
     monospace;
-  font-size: 0.9em;
 }
 
 a {
@@ -69,19 +69,67 @@ a {
   text-decoration: none;
 }
 
-/* --- editorial micro-typography ---------------------------------------- */
+/* --- typography scale ------------------------------------------------
+   Hero     48-64px  (workspace headline)
+   Page     32-40px  (page titles / result docs)
+   Section  20-24px  (section titles)
+   Agent    16-18px  (agent names)
+   Body     15-17px  (reading text)
+   Nav      14-15px  (sidebar / top bar)
+   Metric   24-32px  (run metrics)
+   Doc      17-18px  (result document)
+   Secondary 13-14px --------------------------------------------------- */
+
+.tok-hero {
+  font-size: clamp(40px, 4.2vw, 56px);
+  font-weight: 650;
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  color: var(--at-fg);
+}
+
+.tok-page-title {
+  font-size: clamp(24px, 2.4vw, 32px);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--at-fg);
+}
+
+.tok-section {
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--at-fg);
+}
+
 .tok-eyebrow {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--at-muted);
 }
 
-.tok-title {
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+.tok-body {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--at-fg);
+}
+
+.tok-secondary {
+  font-size: 14px;
+  color: var(--at-secondary);
+}
+
+.tok-caption {
+  font-size: 13px;
+  color: var(--at-muted);
+}
+
+.tok-metric {
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   color: var(--at-fg);
 }
 
@@ -90,24 +138,23 @@ a {
   background: var(--at-border);
 }
 
-/* subtle scrollbars that match the palette */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--at-faint) transparent;
 }
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
 }
 *::-webkit-scrollbar-thumb {
   background: var(--at-faint);
-  border-radius: 4px;
+  border-radius: 5px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 
-/* --- status glyphs (pure lifecycle, not personality) ------------------- */
+/* --- status / state --------------------------------------------------- */
 .at-status-pulse {
   animation: at-pulse 1.8s ease-in-out infinite;
 }
@@ -121,14 +168,13 @@ a {
   }
 }
 
-/* --- activity item fade-in (SSE-driven) -------------------------------- */
 .at-fade-in {
   animation: at-fade 0.35s ease-out both;
 }
 @keyframes at-fade {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -136,41 +182,48 @@ a {
   }
 }
 
-/* --- Markdown document styling ------------------------------------------- */
+/* --- card: carries information, not decoration ------------------------- */
+.at-card {
+  background: var(--at-bg-elevated);
+  border: 1px solid var(--at-border);
+  border-radius: 10px;
+}
+
+/* --- Markdown document (Result / Artifacts) ----------------------------- */
 .md-doc {
   line-height: 1.75;
   color: var(--at-fg);
-  font-size: 14px;
+  font-size: 17px;
 }
 .md-doc h1,
 .md-doc h2,
 .md-doc h3,
 .md-doc h4 {
-  font-weight: 600;
-  line-height: 1.35;
-  letter-spacing: -0.01em;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
 }
 .md-doc h1 {
-  font-size: 20px;
-  margin: 0 0 1rem;
+  font-size: 30px;
+  margin: 0 0 1.2rem;
 }
 .md-doc h2 {
-  font-size: 16px;
-  margin: 2rem 0 0.6rem;
-  padding-bottom: 0.35rem;
+  font-size: 22px;
+  margin: 2.2rem 0 0.7rem;
+  padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--at-border);
 }
 .md-doc h3 {
-  font-size: 14px;
-  margin: 1.5rem 0 0.4rem;
+  font-size: 18px;
+  margin: 1.6rem 0 0.5rem;
 }
 .md-doc p {
-  margin: 0.6rem 0;
+  margin: 0.7rem 0;
 }
 .md-doc ul,
 .md-doc ol {
-  margin: 0.6rem 0;
-  padding-left: 1.4rem;
+  margin: 0.7rem 0;
+  padding-left: 1.5rem;
 }
 .md-doc ul {
   list-style: disc;
@@ -179,22 +232,22 @@ a {
   list-style: decimal;
 }
 .md-doc li {
-  margin: 0.2rem 0;
+  margin: 0.25rem 0;
 }
 .md-doc code {
-  background: #f4f4f2;
+  background: #f3f3f1;
   border: 1px solid var(--at-border);
-  border-radius: 3px;
-  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  padding: 0.12rem 0.35rem;
   font-size: 0.86em;
 }
 .md-doc pre {
   background: #17171a;
   color: #fafafa;
-  border-radius: 6px;
-  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
   overflow-x: auto;
-  margin: 0.8rem 0;
+  margin: 0.9rem 0;
 }
 .md-doc pre code {
   background: transparent;
@@ -204,32 +257,32 @@ a {
 }
 .md-doc blockquote {
   border-left: 3px solid var(--at-faint);
-  padding-left: 0.8rem;
+  padding-left: 0.9rem;
   color: var(--at-secondary);
-  margin: 0.8rem 0;
+  margin: 0.9rem 0;
 }
 .md-doc table {
   border-collapse: collapse;
-  margin: 0.8rem 0;
+  margin: 0.9rem 0;
   width: 100%;
 }
 .md-doc th,
 .md-doc td {
   border: 1px solid var(--at-border);
-  padding: 0.4rem 0.6rem;
+  padding: 0.45rem 0.7rem;
   text-align: left;
 }
 .md-doc th {
-  background: #f4f4f2;
+  background: #f3f3f1;
   font-weight: 600;
 }
 .md-doc hr {
   border: none;
   border-top: 1px solid var(--at-border);
-  margin: 1.5rem 0;
+  margin: 1.6rem 0;
 }
 
-/* --- route transition ----------------------------------------------------- */
+/* --- route transition --------------------------------------------------- */
 .view-enter-active,
 .view-leave-active {
   transition:
@@ -238,7 +291,7 @@ a {
 }
 .view-enter-from {
   opacity: 0;
-  transform: translateY(4px);
+  transform: translateY(5px);
 }
 .view-leave-to {
   opacity: 0;

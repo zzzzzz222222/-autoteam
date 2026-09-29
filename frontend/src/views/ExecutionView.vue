@@ -171,116 +171,116 @@ function cleanup() {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-6xl px-8 py-8">
-    <!-- Run header (contextual bar, not a card) -->
-    <div class="mb-8 flex items-end justify-between gap-6">
-      <div class="min-w-0">
-        <p class="tok-eyebrow mb-1.5">{{ t('exec.run') }}</p>
-        <h1 class="truncate text-xl font-semibold tracking-tight text-zinc-900">
-          {{ snapshot?.task || t('exec.running') }}
-        </h1>
-        <p class="mt-1 font-mono text-[11px] text-zinc-400">{{ summary.runId }}</p>
+  <div class="mx-auto w-full max-w-[1400px] px-10 py-10">
+    <!-- Run header: wide context bar with metrics -->
+    <div class="mb-10 flex flex-wrap items-end justify-between gap-6">
+      <div class="min-w-0 max-w-[720px]">
+        <p class="tok-eyebrow mb-2">{{ t('exec.run') }}</p>
+        <h1 class="tok-page-title truncate">{{ snapshot?.task || t('exec.running') }}</h1>
+        <p class="mt-2 font-mono text-[13px] text-zinc-400">{{ summary.runId }}</p>
       </div>
-      <div class="hidden shrink-0 gap-8 text-right sm:flex">
+      <div class="flex shrink-0 gap-10">
         <div>
-          <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.agents }}</p>
-          <p class="text-[11px] text-zinc-400">{{ t('exec.agents_count') }}</p>
+          <p class="tok-metric">{{ summary.agents }}</p>
+          <p class="text-[13px] text-zinc-400">{{ t('exec.agents_count') }}</p>
         </div>
         <div>
-          <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.layers }}</p>
-          <p class="text-[11px] text-zinc-400">{{ t('exec.layers_count') }}</p>
+          <p class="tok-metric">{{ summary.layers }}</p>
+          <p class="text-[13px] text-zinc-400">{{ t('exec.layers_count') }}</p>
         </div>
         <div>
-          <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.sources }}</p>
-          <p class="text-[11px] text-zinc-400">{{ t('exec.sources') }}</p>
+          <p class="tok-metric">{{ summary.sources }}</p>
+          <p class="text-[13px] text-zinc-400">{{ t('exec.sources') }}</p>
+        </div>
+        <div>
+          <p class="tok-metric">{{ summary.evidence }}</p>
+          <p class="text-[13px] text-zinc-400">{{ t('exec.evidence') }}</p>
         </div>
       </div>
     </div>
 
-    <!-- Overview: Live Team Activity -->
-    <div v-if="isOverview" class="grid grid-cols-12 gap-10">
-      <!-- Agent column (activity stream per agent) -->
-      <div class="col-span-8 space-y-7">
+    <!-- Overview: Live Team Activity (wide) -->
+    <div v-if="isOverview" class="grid grid-cols-12 gap-12">
+      <!-- Activity stream -->
+      <div class="col-span-8 space-y-8">
         <p class="tok-eyebrow">{{ t('exec.team_activity') }}</p>
 
-        <div v-if="error" class="text-sm text-red-600">{{ error }}</div>
+        <div v-if="error" class="text-[15px] text-red-600">{{ error }}</div>
 
         <div
           v-for="agent in orderedAgents"
           :key="agent.id"
-          class="at-fade-in border-b border-zinc-200 pb-6"
+          class="at-fade-in border-b border-zinc-200 pb-7"
         >
-          <div class="flex items-baseline gap-3">
+          <div class="flex items-center gap-3">
             <AgentStatus :status="(store.agentStatuses as Record<string, string>)[agent.id] || agent.status" />
-            <span class="text-[14px] font-semibold text-zinc-900">{{ agent.name }}</span>
-            <span class="text-[12px] text-zinc-400">
-              {{ agentDoing(agent.id) || '·' }}
-            </span>
+            <span class="text-[17px] font-semibold text-zinc-900">{{ agent.name }}</span>
+            <span class="text-[15px] text-zinc-500">{{ agentDoing(agent.id) || '·' }}</span>
           </div>
 
-          <div v-if="(groupedEvents[agent.id] ?? []).length" class="mt-2.5 space-y-1.5">
+          <div v-if="(groupedEvents[agent.id] ?? []).length" class="mt-3 space-y-1.5">
             <div
               v-for="event in groupedEvents[agent.id]"
               :key="event.event_id"
-              class="flex items-center gap-3 text-[13px]"
+              class="flex items-center gap-4 text-[15px]"
             >
-              <span class="w-16 shrink-0 font-mono text-[11px] text-zinc-400">
+              <span class="w-20 shrink-0 font-mono text-[13px] text-zinc-400">
                 {{ formatTime(event.timestamp) }}
               </span>
               <span
-                class="w-16 shrink-0 text-[11px] font-medium"
+                class="w-20 shrink-0 text-[13px] font-medium"
                 :class="glyphColor(eventGlyph(event.type))"
               >
                 {{ glyphLabel(event) }}
               </span>
-              <span class="min-w-0 truncate text-zinc-600">{{ event.message }}</span>
+              <span class="min-w-0 flex-1 truncate text-zinc-600">{{ event.message }}</span>
             </div>
           </div>
-          <p v-else class="mt-1.5 text-[12px] text-zinc-300">{{ t('exec.no_activity') }}</p>
+          <p v-else class="mt-2 text-[14px] text-zinc-400">{{ t('exec.no_activity') }}</p>
         </div>
 
-        <p v-if="!orderedAgents.length" class="py-12 text-center text-sm text-zinc-400">
+        <p v-if="!orderedAgents.length" class="py-12 text-center text-[15px] text-zinc-400">
           {{ t('exec.waiting') }}
         </p>
       </div>
 
       <!-- Right rail: provenance + mode truth -->
-      <aside class="col-span-4 space-y-8">
+      <aside class="col-span-4 space-y-10">
         <div>
-          <p class="tok-eyebrow mb-2.5">{{ t('exec.tool_calls') }}</p>
-          <ul class="space-y-1.5">
+          <p class="tok-eyebrow mb-3">{{ t('exec.tool_calls') }}</p>
+          <ul class="space-y-2">
             <li
               v-for="event in store.events.filter((e) => e.type === 'TOOL_CALLED').reverse().slice(0, 8)"
               :key="event.event_id"
-              class="flex items-center justify-between text-[13px]"
+              class="flex items-center justify-between text-[15px]"
             >
               <span class="font-mono text-zinc-700">{{ event.metadata.tool || 'tool' }}</span>
               <span
-                class="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                class="rounded-full px-2.5 py-0.5 text-[12px] font-medium"
                 :class="event.metadata.offline ? 'bg-zinc-100 text-zinc-500' : 'bg-emerald-50 text-emerald-700'"
               >
                 {{ event.metadata.offline ? 'offline' : 'web' }}
               </span>
             </li>
-            <li v-if="!store.events.some((e) => e.type === 'TOOL_CALLED')" class="text-[12px] text-zinc-300">
+            <li v-if="!store.events.some((e) => e.type === 'TOOL_CALLED')" class="text-[14px] text-zinc-400">
               {{ t('exec.no_tool_calls') }}
             </li>
           </ul>
         </div>
 
         <div>
-          <p class="tok-eyebrow mb-2.5">{{ t('exec.provenance') }}</p>
-          <div class="flex gap-8">
+          <p class="tok-eyebrow mb-3">{{ t('exec.provenance') }}</p>
+          <div class="flex gap-10">
             <div>
-              <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.evidence }}</p>
-              <p class="text-[11px] text-zinc-400">{{ t('exec.evidence') }}</p>
+              <p class="tok-metric">{{ summary.evidence }}</p>
+              <p class="text-[13px] text-zinc-400">{{ t('exec.evidence') }}</p>
             </div>
             <div>
-              <p class="font-mono text-lg font-medium text-zinc-900">{{ summary.sources }}</p>
-              <p class="text-[11px] text-zinc-400">{{ t('exec.sources') }}</p>
+              <p class="tok-metric">{{ summary.sources }}</p>
+              <p class="text-[13px] text-zinc-400">{{ t('exec.sources') }}</p>
             </div>
           </div>
-          <p class="mt-3 text-[11px] text-zinc-400">
+          <p class="mt-3 text-[13px] text-zinc-400">
             {{ t('exec.mode_truth') }}
           </p>
         </div>

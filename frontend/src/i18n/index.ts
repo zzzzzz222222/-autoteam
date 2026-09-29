@@ -27,6 +27,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'nav.artifacts': '交付物',
     'nav.result': '结果',
     'nav.lang': 'EN',
+    'sidebar.workspace': '工作台',
+    'sidebar.recent': '最近',
     'topbar.idle': '尚未选择任务',
 
     // status badge
@@ -61,8 +63,25 @@ const messages: Record<Locale, Record<string, string>> = {
     'workspace.ex_saas': 'SaaS 市场进入',
     'workspace.ex_saas_value':
       '制定 SaaS 产品进入某行业的市场策略，包含客户洞察、竞品分析与财务评估',
-    'workspace.recent': '最近运行（本后端会话）',
+    'workspace.recent': '最近运行',
     'workspace.forming': '正在组建动态团队并开始执行…',
+
+    // how autoteam works (static product narrative)
+    'ws.title': 'HOW AUTOTEAM WORKS',
+    'ws.j1': 'Your task',
+    'ws.j1d': 'describe what to accomplish',
+    'ws.j2': 'Understanding',
+    'ws.j2d': 'parse intent & domain',
+    'ws.j3': 'Capability discovery',
+    'ws.j3d': 'map required skills',
+    'ws.j4': 'Dynamic team',
+    'ws.j4d': 'roles formed per task',
+    'ws.j5': 'Agents & tools',
+    'ws.j5d': 'web · calculator · files',
+    'ws.j6': 'Artifacts & evidence',
+    'ws.j6d': 'traceable outputs',
+    'ws.j7': 'Final result',
+    'ws.j7d': 'assembled deliverable',
 
     // execution
     'exec.overview': '总览',
@@ -132,6 +151,9 @@ const messages: Record<Locale, Record<string, string>> = {
     // artifacts
     'art.none': '暂无交付物 —— 团队仍在工作中。',
     'art.flow': 'COLLABORATION FLOW',
+    'art.flow_title': '交付物与协作流',
+    'art.flow_sub': '按依赖深度排序 —— 每个卡片对应一个真实交付物',
+    'art.artifacts_count': '个交付物',
     'art.expand': '展开',
     'art.collapse': '收起',
     'art.upstream': '上游',
@@ -141,6 +163,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'art.offline': '(离线)',
     'art.consumed_by': '消费方',
     'art.consumed': '被消费于',
+    'art.produced_by': '产出',
+    'art.select': '选择左侧交付物以查看其证据、来源和消费方。',
     'art.artifact_label': 'ARTIFACT',
     'art.content': '内容',
     'art.mode_real': '执行模式：Real · 来源真实',
@@ -174,6 +198,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'nav.artifacts': 'Artifacts',
     'nav.result': 'Result',
     'nav.lang': '中文',
+    'sidebar.workspace': 'Workspace',
+    'sidebar.recent': 'Recent',
     'topbar.idle': 'No task selected',
 
     // status badge
@@ -208,8 +234,25 @@ const messages: Record<Locale, Record<string, string>> = {
     'workspace.ex_saas': 'SaaS Market Entry',
     'workspace.ex_saas_value':
       'Draft a SaaS go-to-market strategy: customer insight, competitor landscape and financial assessment',
-    'workspace.recent': 'Recent runs (this backend session)',
+    'workspace.recent': 'Recent runs',
     'workspace.forming': 'Forming the dynamic team and starting execution…',
+
+    // how autoteam works (static product narrative)
+    'ws.title': 'HOW AUTOTEAM WORKS',
+    'ws.j1': 'Your task',
+    'ws.j1d': 'describe what to accomplish',
+    'ws.j2': 'Understanding',
+    'ws.j2d': 'parse intent & domain',
+    'ws.j3': 'Capability discovery',
+    'ws.j3d': 'map required skills',
+    'ws.j4': 'Dynamic team',
+    'ws.j4d': 'roles formed per task',
+    'ws.j5': 'Agents & tools',
+    'ws.j5d': 'web · calculator · files',
+    'ws.j6': 'Artifacts & evidence',
+    'ws.j6d': 'traceable outputs',
+    'ws.j7': 'Final result',
+    'ws.j7d': 'assembled deliverable',
 
     // execution
     'exec.overview': 'Overview',
@@ -279,6 +322,9 @@ const messages: Record<Locale, Record<string, string>> = {
     // artifacts
     'art.none': 'No artifacts yet — the team is still working.',
     'art.flow': 'COLLABORATION FLOW',
+    'art.flow_title': 'Artifacts & Collaboration Flow',
+    'art.flow_sub': 'Ordered by dependency depth — one real artifact per card',
+    'art.artifacts_count': 'artifacts',
     'art.expand': 'Expand',
     'art.collapse': 'Collapse',
     'art.upstream': 'Upstream',
@@ -288,6 +334,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'art.offline': '(offline)',
     'art.consumed_by': 'consumed by',
     'art.consumed': 'Consumed by',
+    'art.produced_by': 'produced by',
+    'art.select': 'Select an artifact on the left to inspect its evidence, sources and consumers.',
     'art.artifact_label': 'ARTIFACT',
     'art.content': 'Content',
     'art.mode_real': 'Execution mode: Real · live sources',
