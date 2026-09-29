@@ -3,12 +3,14 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { api } from '@/api/client'
 import { useTeamStore } from '@/stores/team'
+import { useI18n } from '@/i18n'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { ArtifactDto, TeamResponse } from '@/types'
 
 const props = defineProps<{ taskId: string }>()
 const route = useRoute()
 const store = useTeamStore()
+const { t } = useI18n()
 
 const team = ref<TeamResponse | null>(null)
 const artifacts = ref<ArtifactDto[]>([])
@@ -111,12 +113,12 @@ function eventColor(type: string): string {
     <div class="mb-6">
       <div class="flex items-center justify-between gap-4">
         <h1 class="truncate text-lg font-semibold text-zinc-900">
-          {{ store.current?.task || 'Running…' }}
+          {{ store.current?.task || t('exec.running') }}
         </h1>
         <StatusBadge :status="store.current?.status || 'pending'" />
       </div>
       <p v-if="store.current" class="mt-1 text-xs text-zinc-400">
-        {{ store.current.run_id }} · mode {{ store.current.mode }} · {{ store.current.event_count }} events
+        {{ store.current.run_id }} · {{ t('exec.mode') }} {{ store.current.mode }} · {{ store.current.event_count }} {{ t('exec.events') }}
       </p>
       <p v-if="toolError" class="mt-1 text-sm text-red-600">{{ toolError }}</p>
     </div>
@@ -127,7 +129,7 @@ function eventColor(type: string): string {
       <aside class="col-span-3 space-y-4">
         <div class="rounded-lg border border-zinc-200 bg-white">
           <div class="border-b border-zinc-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Team
+            {{ t('exec.team') }}
           </div>
           <ul class="divide-y divide-zinc-100">
             <li v-for="agent in team?.agents ?? []" :key="agent.id">
@@ -142,38 +144,38 @@ function eventColor(type: string): string {
               </button>
             </li>
             <li v-if="!team?.agents.length" class="px-3 py-2.5 text-xs text-zinc-400">
-              Team is being formed…
+              {{ t('exec.team_forming') }}
             </li>
           </ul>
         </div>
 
         <!-- Selected agent details -->
         <div v-if="selectedAgent" class="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
-          <p class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Agent details</p>
+          <p class="text-xs font-semibold uppercase tracking-wide text-zinc-400">{{ t('exec.agent_details') }}</p>
           <p class="mt-2 font-medium text-zinc-900">{{ selectedAgent.name }}</p>
           <dl class="mt-2 space-y-1.5 text-xs text-zinc-600">
             <div class="flex justify-between gap-2">
-              <dt class="text-zinc-400">Capabilities</dt>
+              <dt class="text-zinc-400">{{ t('exec.capabilities') }}</dt>
               <dd class="text-right">{{ (selectedAgent.capabilities || []).join(', ') || '—' }}</dd>
             </div>
             <div class="flex justify-between gap-2">
-              <dt class="text-zinc-400">Tools</dt>
+              <dt class="text-zinc-400">{{ t('exec.tools') }}</dt>
               <dd class="text-right">{{ (selectedAgent.tools || []).join(', ') || '—' }}</dd>
             </div>
             <div class="flex justify-between gap-2">
-              <dt class="text-zinc-400">Layer</dt>
+              <dt class="text-zinc-400">{{ t('exec.layer') }}</dt>
               <dd>{{ selectedAgent.layer }}</dd>
             </div>
             <div v-if="downstream.length" class="flex justify-between gap-2">
-              <dt class="text-zinc-400">Feeds</dt>
+              <dt class="text-zinc-400">{{ t('exec.feeds') }}</dt>
               <dd class="text-right">{{ downstream.map((a) => a!.name).join(', ') }}</dd>
             </div>
           </dl>
           <div v-if="selectedArtifact" class="mt-3 border-t border-zinc-100 pt-2 text-xs">
-            <p class="mb-1 font-medium text-zinc-600">Artifact</p>
+            <p class="mb-1 font-medium text-zinc-600">{{ t('exec.artifact') }}</p>
             <p class="text-zinc-500">{{ selectedArtifact.title || selectedArtifact.artifact_id }}</p>
             <p class="text-zinc-400">
-              Sources {{ selectedArtifact.source_records.length }} · Evidence {{ selectedArtifact.evidence.length }}
+              {{ t('exec.artifact_src') }} {{ selectedArtifact.source_records.length }} · {{ t('exec.artifact_ev') }} {{ selectedArtifact.evidence.length }}
             </p>
           </div>
         </div>
@@ -182,9 +184,9 @@ function eventColor(type: string): string {
       <!-- Execution timeline -->
       <section class="col-span-6 rounded-lg border border-zinc-200 bg-white">
         <div class="flex items-center justify-between border-b border-zinc-100 px-3 py-2">
-          <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">Execution</span>
+          <span class="text-xs font-semibold uppercase tracking-wide text-zinc-400">{{ t('exec.timeline') }}</span>
           <span class="text-xs text-zinc-400">
-            {{ filteredEvents.length }} events
+            {{ filteredEvents.length }} {{ t('exec.events') }}
           </span>
         </div>
         <div class="h-[560px] overflow-y-auto px-3 py-2">
@@ -199,12 +201,12 @@ function eventColor(type: string): string {
               <span class="min-w-0 flex-1 truncate text-zinc-600">
                 <template v-if="event.agent_id">{{ agentName(event.agent_id) }} — </template>{{ event.message }}
                 <template v-if="event.type === 'TOOL_CALLED' && event.metadata.offline">
-                  <span class="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500">offline</span>
+                  <span class="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500">{{ t('exec.offline') }}</span>
                 </template>
               </span>
             </li>
           </ol>
-          <p v-else class="py-8 text-center text-sm text-zinc-400">Waiting for events…</p>
+          <p v-else class="py-8 text-center text-sm text-zinc-400">{{ t('exec.waiting') }}</p>
         </div>
       </section>
 
@@ -212,25 +214,25 @@ function eventColor(type: string): string {
       <aside class="col-span-3 space-y-4">
         <div class="rounded-lg border border-zinc-200 bg-white">
           <div class="border-b border-zinc-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Tool calls
+            {{ t('exec.tool_calls') }}
           </div>
           <ul class="divide-y divide-zinc-100 px-3 py-1 text-xs">
             <li v-for="event in toolEvents.slice().reverse()" :key="event.event_id" class="flex items-center justify-between gap-2 py-2">
               <span class="font-mono text-zinc-700">{{ (event.metadata.tool || 'tool') }}</span>
-              <span v-if="event.metadata.offline" class="rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500">offline</span>
-              <span v-else class="rounded bg-emerald-50 px-1 py-0.5 text-[10px] text-emerald-600">web</span>
+              <span v-if="event.metadata.offline" class="rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500">{{ t('exec.offline') }}</span>
+              <span v-else class="rounded bg-emerald-50 px-1 py-0.5 text-[10px] text-emerald-600">{{ t('exec.web') }}</span>
             </li>
-            <li v-if="!toolEvents.length" class="py-2 text-zinc-400">No tool calls yet</li>
+            <li v-if="!toolEvents.length" class="py-2 text-zinc-400">{{ t('exec.no_tool_calls') }}</li>
           </ul>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div class="rounded-lg border border-zinc-200 bg-white p-3">
             <p class="text-2xl font-semibold text-zinc-900">{{ store.evidenceCount }}</p>
-            <p class="text-xs text-zinc-500">Evidence</p>
+            <p class="text-xs text-zinc-500">{{ t('exec.evidence') }}</p>
           </div>
           <div class="rounded-lg border border-zinc-200 bg-white p-3">
             <p class="text-2xl font-semibold text-zinc-900">{{ store.sourceCount }}</p>
-            <p class="text-xs text-zinc-500">Sources</p>
+            <p class="text-xs text-zinc-500">{{ t('exec.sources') }}</p>
           </div>
         </div>
       </aside>

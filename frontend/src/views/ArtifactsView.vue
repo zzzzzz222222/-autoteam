@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
+import { useI18n } from '@/i18n'
 import type { ArtifactDto } from '@/types'
 
 const props = defineProps<{ taskId: string }>()
+const { t } = useI18n()
 const artifacts = ref<ArtifactDto[]>([])
 const error = ref<string | null>(null)
 const expandedId = ref<string | null>(null)
@@ -61,21 +63,21 @@ function escapeHtml(value: string): string {
             {{ artifact.agent_name }} · {{ artifact.output_type }}
           </p>
           <p class="mt-1 text-[11px] text-zinc-400">
-            Sources {{ artifact.source_records.length }} · Evidence {{ artifact.evidence.length }}
+            {{ t('art.sources') }} {{ artifact.source_records.length }} · {{ t('art.evidence') }} {{ artifact.evidence.length }}
           </p>
           <button
             type="button"
             class="mt-2 text-[11px] font-medium text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline"
             @click="expandedId = expandedId === artifact.artifact_id ? null : artifact.artifact_id"
           >
-            {{ expandedId === artifact.artifact_id ? 'Collapse' : 'Expand' }}
+            {{ expandedId === artifact.artifact_id ? t('art.collapse') : t('art.expand') }}
           </button>
         </div>
         <span v-if="idx < ordered.length - 1" class="self-center text-zinc-400">→</span>
       </template>
     </div>
     <p v-else-if="!error" class="rounded-lg border border-zinc-200 bg-white p-6 text-center text-sm text-zinc-400">
-      No artifacts yet — the team is still working.
+      {{ t('art.none') }}
     </p>
 
     <!-- Expanded artifact detail -->
@@ -90,33 +92,33 @@ function escapeHtml(value: string): string {
         </div>
 
         <div v-if="artifact.dependencies.length" class="mb-3 text-xs text-zinc-500">
-          <span class="font-medium text-zinc-600">Upstream:</span>
+          <span class="font-medium text-zinc-600">{{ t('art.upstream') }}:</span>
           {{ artifact.dependencies.join(', ') }}
         </div>
 
         <div class="prose-markdown text-sm text-zinc-700" v-html="renderMarkdown(artifact.content)"></div>
 
         <div v-if="Object.keys(artifact.structured_data).length" class="mt-3 rounded bg-zinc-50 p-3 text-xs">
-          <p class="mb-1 font-medium text-zinc-600">Key data</p>
+          <p class="mb-1 font-medium text-zinc-600">{{ t('art.key_data') }}</p>
           <pre class="whitespace-pre-wrap text-zinc-600">{{ JSON.stringify(artifact.structured_data, null, 2) }}</pre>
         </div>
 
         <div v-if="artifact.source_records.length" class="mt-3">
-          <p class="mb-1 text-xs font-medium text-zinc-600">Sources</p>
+          <p class="mb-1 text-xs font-medium text-zinc-600">{{ t('art.sources') }}</p>
           <ol class="space-y-1 text-xs text-zinc-600">
             <li v-for="source in artifact.source_records" :key="source.id">
               {{ source.title }}
               <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="text-zinc-400 underline">
                 ({{ source.url.slice(0, 60) }})
               </a>
-              <span v-else class="text-zinc-400">(offline)</span>
+              <span v-else class="text-zinc-400">{{ t('art.offline') }}</span>
               <span class="ml-1 rounded bg-zinc-100 px-1 py-0.5 text-[10px] text-zinc-500">{{ source.source_type }}</span>
             </li>
           </ol>
         </div>
 
         <div v-if="artifact.evidence.length" class="mt-3">
-          <p class="mb-1 text-xs font-medium text-zinc-600">Evidence</p>
+          <p class="mb-1 text-xs font-medium text-zinc-600">{{ t('art.evidence') }}</p>
           <ul class="space-y-1 text-xs text-zinc-600">
             <li v-for="(ev, i) in artifact.evidence" :key="i">
               <span class="text-zinc-400">#{{ i + 1 }}</span> {{ ev.claim }}

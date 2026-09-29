@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
+import { useI18n } from '@/i18n'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { FinalResultResponse } from '@/types'
 
 const props = defineProps<{ taskId: string }>()
+const { t } = useI18n()
 const result = ref<FinalResultResponse | null>(null)
 const error = ref<string | null>(null)
 const coped = ref(false)
@@ -82,9 +84,9 @@ function escapeHtml(value: string): string {
           </div>
           <p class="text-sm font-semibold text-zinc-900">{{ result.title }}</p>
           <div class="mt-3 border-t border-zinc-100 pt-3 text-xs text-zinc-500">
-            <p>{{ result.sources.length }} Sources</p>
-            <p>{{ result.evidence.length }} Evidence</p>
-            <p>{{ toc.length }} Sections</p>
+            <p>{{ result.sources.length }} {{ t('result.sources') }}</p>
+            <p>{{ result.evidence.length }} {{ t('result.evidence') }}</p>
+            <p>{{ toc.length }} {{ t('result.sections') }}</p>
           </div>
           <div class="mt-3 flex gap-2 border-t border-zinc-100 pt-3">
             <button
@@ -92,14 +94,14 @@ function escapeHtml(value: string): string {
               class="rounded border border-zinc-300 px-2.5 py-1 text-xs text-zinc-600 transition-colors hover:bg-zinc-50"
               @click="copyMarkdown"
             >
-              {{ coped ? 'Copied ✓' : 'Copy' }}
+              {{ coped ? t('result.copied') : t('result.copy') }}
             </button>
             <button
               type="button"
               class="rounded border border-zinc-300 px-2.5 py-1 text-xs text-zinc-600 transition-colors hover:bg-zinc-50"
               @click="downloadMarkdown"
             >
-              Save .md
+              {{ t('result.save') }}
             </button>
           </div>
         </div>
@@ -124,7 +126,7 @@ function escapeHtml(value: string): string {
     <section class="col-span-9">
       <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
       <p v-else-if="!result" class="rounded-lg border border-zinc-200 bg-white p-6 text-center text-sm text-zinc-400">
-        The final deliverable is not ready yet — the team is still working.
+        {{ t('result.not_ready') }}
       </p>
 
       <template v-else>
@@ -132,7 +134,7 @@ function escapeHtml(value: string): string {
         <div class="rounded-lg border border-zinc-200 bg-white p-5">
           <h2 class="text-lg font-semibold text-zinc-900">{{ result.title }}</h2>
           <p class="mt-2 text-xs text-zinc-400">
-            Assembled from real agent artifacts · status
+            {{ t('result.assembled') }}
           <StatusBadge :status="result.status" class="ml-1" />
           </p>
         </div>
@@ -150,7 +152,7 @@ function escapeHtml(value: string): string {
 
         <!-- Sources -->
         <div class="mt-4 rounded-lg border border-zinc-200 bg-white p-5">
-          <h3 class="mb-3 font-semibold text-zinc-800">Sources</h3>
+          <h3 class="mb-3 font-semibold text-zinc-800">{{ t('result.sources') }}</h3>
           <ol v-if="result.sources.length" class="space-y-2">
             <li v-for="(source, i) in result.sources" :key="source.id" class="flex gap-3 text-sm">
               <span class="font-mono text-xs text-zinc-400">{{ String(i + 1).padStart(2, '0') }}</span>
@@ -160,18 +162,18 @@ function escapeHtml(value: string): string {
                   <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="underline">
                     {{ source.url }}
                   </a>
-                  <span v-else>(offline source — no URL)</span>
+                  <span v-else>{{ t('result.offline_source') }}</span>
                   <span class="ml-2 rounded bg-zinc-100 px-1 py-0.5 text-[10px]">{{ source.source_type }}</span>
                 </p>
               </div>
             </li>
           </ol>
-          <p v-else class="text-sm text-zinc-400">No sources recorded.</p>
+          <p v-else class="text-sm text-zinc-400">{{ t('result.no_sources') }}</p>
         </div>
 
         <!-- Evidence -->
         <div class="mt-4 rounded-lg border border-zinc-200 bg-white p-5">
-          <h3 class="mb-3 font-semibold text-zinc-800">Evidence</h3>
+          <h3 class="mb-3 font-semibold text-zinc-800">{{ t('result.evidence') }}</h3>
           <ul v-if="result.evidence.length" class="space-y-3">
             <li v-for="(ev, i) in result.evidence" :key="i" class="text-sm">
               <p class="text-zinc-700">
@@ -180,7 +182,7 @@ function escapeHtml(value: string): string {
               <p class="mt-0.5 pl-6 text-xs text-zinc-400">{{ ev.evidence }}</p>
             </li>
           </ul>
-          <p v-else class="text-sm text-zinc-400">No evidence recorded.</p>
+          <p v-else class="text-sm text-zinc-400">{{ t('result.no_evidence') }}</p>
         </div>
       </template>
     </section>

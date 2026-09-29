@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from '@/i18n'
 
 const route = useRoute()
+const { t, toggleLocale } = useI18n()
 const taskId = computed(() => (route.params.taskId as string) ?? '')
 </script>
 
@@ -17,7 +19,7 @@ const taskId = computed(() => (route.params.taskId as string) ?? '')
             class="inline-flex h-6 w-6 items-center justify-center rounded bg-zinc-900 text-[11px] font-bold text-white"
             >A</span
           >
-          AutoTeam
+          {{ t('app.name') }}
         </RouterLink>
         <nav v-if="taskId" class="flex items-center gap-1 text-sm">
           <RouterLink
@@ -26,32 +28,41 @@ const taskId = computed(() => (route.params.taskId as string) ?? '')
             active-class="bg-zinc-100 font-medium text-zinc-900"
             exact-active-class="bg-zinc-100 font-medium text-zinc-900"
           >
-            Overview
+            {{ t('nav.overview') }}
           </RouterLink>
           <RouterLink
             :to="{ name: 'team', params: { taskId } }"
             class="rounded px-2.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
             active-class="bg-zinc-100 font-medium text-zinc-900"
           >
-            Team
+            {{ t('nav.team') }}
           </RouterLink>
           <RouterLink
             :to="{ name: 'artifacts', params: { taskId } }"
             class="rounded px-2.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
             active-class="bg-zinc-100 font-medium text-zinc-900"
           >
-            Artifacts
+            {{ t('nav.artifacts') }}
           </RouterLink>
           <RouterLink
             :to="{ name: 'result', params: { taskId } }"
             class="rounded px-2.5 py-1 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
             active-class="bg-zinc-100 font-medium text-zinc-900"
           >
-            Result
+            {{ t('nav.result') }}
           </RouterLink>
         </nav>
       </div>
-      <span class="text-xs text-zinc-400">v0.5.0</span>
+      <div class="flex items-center gap-3">
+        <button
+          type="button"
+          class="rounded border border-zinc-200 px-2 py-1 text-xs text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-900"
+          @click="toggleLocale"
+        >
+          {{ t('nav.lang') }}
+        </button>
+        <span class="text-xs text-zinc-400">{{ t('app.version') }}</span>
+      </div>
     </header>
     <main class="flex-1">
       <RouterView />
