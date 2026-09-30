@@ -152,6 +152,12 @@ def get_result(task_id: str) -> FinalResultResponse:
         sources=final["sources"],
         evidence=final["evidence"],
         sections=final["sections"],
+        insights=final.get("insights") or [],
+        contradictions=final.get("contradictions") or [],
+        uncertainties=final.get("uncertainties") or [],
+        tradeoffs=final.get("tradeoffs") or [],
+        recommendations=final.get("recommendations") or [],
+        synthesis_status=final.get("synthesis_status") or "",
     )
 
 

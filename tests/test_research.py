@@ -153,7 +153,11 @@ def test_tool_registry_mock_is_offline():
     assert registry.run("web_search", "q").offline is True
 
 
-def test_provider_fallback_without_key_is_mock():
+def test_provider_fallback_without_key_is_mock(monkeypatch):
+    # Isolate from a local .env: "without key" must actually mean no key.
+    monkeypatch.delenv("AUTOTEAM_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("AUTOTEAM_LLM_PROVIDER", "mock")
     provider = get_llm_provider()
     assert isinstance(provider, MockLLMProvider)
 

@@ -205,10 +205,12 @@ function statusLabel(status: string): string {
 
       <main class="min-h-0 flex-1 overflow-y-auto">
         <RouterView v-slot="{ Component }">
-          <Transition name="view" mode="out-in">
-            <!-- key by taskId so switching "recent" runs remounts the view -->
-            <component :is="Component" :key="String(route.params.taskId ?? route.name ?? 'root')" />
-          </Transition>
+          <!-- key remounts on task switch; CSS animation (not <Transition>) so opacity can't stick -->
+          <component
+            :is="Component"
+            :key="String(route.params.taskId ?? route.name ?? 'root')"
+            class="at-route-in"
+          />
         </RouterView>
       </main>
     </div>

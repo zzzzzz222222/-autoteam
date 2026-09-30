@@ -82,6 +82,7 @@ class TaskExecutionSession:
         self.agent_results: dict = {}
         self.artifacts: list[AgentArtifact] = []
         self.final_artifact: FinalArtifact | None = None
+        self.synthesis_bundle: object | None = None  # ReportBundle | None (v0.6)
         self.criteria = criteria or CompletionCriteria()
         self.trace = ExecutionTrace(self.run_id)
         self.error: str | None = None
@@ -201,13 +202,43 @@ def execute_task(
                     message=str(exc)[:200],
                 )
         session.artifacts = valid_artifacts
-        session.final_artifact = ArtifactAssembler().assemble(
-            task=task,
-            artifacts=session.artifacts,
-            agent_order=session.agent_order(),
-            run_id=session.run_id,
-            source_type="offline_mock" if provider is None else "llm",
-        )
+        # v0.6.0: evidence filtering + cross-agent synthesis before assembly.
+        # A synthesis failure never fails the task — fall back to the legacy
+        # concatenation assembler and record SYNTHESIS_FAILED.
+        try:
+            from app.synthesis.assembler import assemble_from_bundle
+            from app.synthesis.pipeline import run_synthesis_pipeline
+
+            bundle = run_synthesis_pipeline(
+                task, session.artifacts, provider=provider, trace=trace
+            )
+            session.synthesis_bundle = bundle
+            session.final_artifact = assemble_from_bundle(
+                task=task,
+                artifacts=session.artifacts,
+                bundle=bundle,
+                agent_order=session.agent_order(),
+                run_id=session.run_id,
+                source_type="offline_mock" if provider is None else "llm",
+            )
+        except Exception as synth_exc:  # noqa: BLE001 — degrade, never fail the run
+            trace.record(
+                "SYNTHESIS_FAILED",
+                message="Synthesis could not produce a valid structured result",
+                reason=str(synth_exc)[:300],
+            )
+            session.synthesis_bundle = None
+            session.final_artifact = ArtifactAssembler().assemble(
+                task=task,
+                artifacts=session.artifacts,
+                agent_order=session.agent_order(),
+                run_id=session.run_id,
+                source_type="offline_mock" if provider is None else "llm",
+            )
+            session.final_artifact.metadata["synthesis_status"] = "failed"
+            session.final_artifact.metadata["synthesis_degradation_reason"] = str(
+                synth_exc
+            )[:300]
         produced = {artifact.output_type.value for artifact in session.artifacts}
         successful = sum(
             1 for result in results.values() if result.status is ExecutionStatus.SUCCESS

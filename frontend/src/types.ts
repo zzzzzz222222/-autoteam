@@ -38,6 +38,61 @@ export interface EvidenceDto {
   claim: string
   evidence: string
   source_id: string
+  evidence_id?: string
+  producer_agent?: string
+  artifact_id?: string
+}
+
+// v0.6.0 synthesis payload (all optional)
+export interface InsightDto {
+  insight_id: string
+  statement: string
+  supporting_evidence_ids: string[]
+  supporting_artifact_ids: string[]
+  producer_agents: string[]
+  uncertainty: string
+}
+
+export interface ContradictionDto {
+  contradiction_id: string
+  claim_a: string
+  claim_b: string
+  evidence_ids: string[]
+  source_ids: string[]
+  agents: string[]
+  status: string
+  resolution: string
+}
+
+export interface UncertaintyDto {
+  uncertainty_id: string
+  statement: string
+  evidence_ids: string[]
+  kind: string
+  note: string
+}
+
+export interface TradeoffDto {
+  tradeoff_id: string
+  dimension: string
+  option_a: string
+  option_b: string
+  gains_a: string[]
+  costs_a: string[]
+  gains_b: string[]
+  costs_b: string[]
+  evidence_ids: string[]
+  implications: string[]
+}
+
+export interface RecommendationDto {
+  recommendation_id: string
+  statement: string
+  supporting_insight_ids: string[]
+  supporting_tradeoff_ids: string[]
+  supporting_evidence_ids: string[]
+  limitations: string[]
+  status: string
 }
 
 export interface SectionDto {
@@ -137,6 +192,12 @@ export interface FinalResultResponse {
   sources: SourceDto[]
   evidence: EvidenceDto[]
   sections: SectionDto[]
+  insights?: InsightDto[]
+  contradictions?: ContradictionDto[]
+  uncertainties?: UncertaintyDto[]
+  tradeoffs?: TradeoffDto[]
+  recommendations?: RecommendationDto[]
+  synthesis_status?: string
 }
 
 export type AgentStatus =

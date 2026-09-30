@@ -31,6 +31,19 @@ const toc = computed(() => result.value?.sections ?? [])
 
 const sourcesCount = computed(() => result.value?.sources.length ?? 0)
 const evidenceCount = computed(() => result.value?.evidence.length ?? 0)
+const insights = computed(() => result.value?.insights ?? [])
+const contradictions = computed(() => result.value?.contradictions ?? [])
+const uncertainties = computed(() => result.value?.uncertainties ?? [])
+const tradeoffs = computed(() => result.value?.tradeoffs ?? [])
+const recommendations = computed(() => result.value?.recommendations ?? [])
+const hasSynthesis = computed(
+  () =>
+    insights.value.length > 0 ||
+    contradictions.value.length > 0 ||
+    uncertainties.value.length > 0 ||
+    tradeoffs.value.length > 0 ||
+    recommendations.value.length > 0,
+)
 
 function mode(): 'real' | 'offline' {
   return store.current?.mode === 'real' ? 'real' : 'offline'
@@ -168,6 +181,97 @@ function splitSection(section: SectionDto): { title: string } {
             </details>
           </section>
         </div>
+
+        <!-- v0.6 Synthesis blocks -->
+        <section v-if="hasSynthesis" class="mt-10 border-t border-zinc-200 pt-6">
+          <p class="tok-eyebrow mb-3">{{ t('result.synthesis') }}</p>
+        </section>
+
+        <section v-if="insights.length" class="mt-10 border-t border-zinc-200 pt-6">
+          <h2 class="mb-3 text-[15px] font-semibold tracking-tight text-zinc-900">
+            {{ t('result.insights') }}
+            <span class="ml-2 font-mono text-[12px] font-normal text-zinc-400">{{ insights.length }}</span>
+          </h2>
+          <ul class="space-y-3">
+            <li v-for="item in insights" :key="item.insight_id" class="text-[13px]">
+              <p class="text-zinc-800">{{ item.statement }}</p>
+              <p class="mt-1 text-[12px] text-zinc-400">
+                evidence: {{ (item.supporting_evidence_ids || []).join(', ') || '—' }}
+                <template v-if="(item.producer_agents || []).length">
+                  · agents: {{ item.producer_agents.join(', ') }}
+                </template>
+                <template v-if="item.uncertainty"> · {{ item.uncertainty }}</template>
+              </p>
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="contradictions.length || uncertainties.length" class="mt-10 border-t border-zinc-200 pt-6">
+          <h2 class="mb-3 text-[15px] font-semibold tracking-tight text-zinc-900">
+            {{ t('result.contradictions') }}
+          </h2>
+          <ul class="space-y-3">
+            <li v-for="item in contradictions" :key="item.contradiction_id" class="text-[13px]">
+              <p class="text-zinc-800">
+                <span class="font-mono text-[11px] text-zinc-400">[{{ item.status }}]</span>
+                {{ item.claim_a }} ↔ {{ item.claim_b }}
+              </p>
+              <p class="mt-1 text-[12px] text-zinc-400">
+                {{ item.resolution || 'Available evidence is insufficient to resolve the discrepancy.' }}
+              </p>
+            </li>
+            <li v-for="item in uncertainties" :key="item.uncertainty_id" class="text-[13px]">
+              <p class="text-zinc-800">
+                <span class="font-mono text-[11px] text-zinc-400">({{ item.kind }})</span>
+                {{ item.statement }}
+              </p>
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="tradeoffs.length" class="mt-10 border-t border-zinc-200 pt-6">
+          <h2 class="mb-3 text-[15px] font-semibold tracking-tight text-zinc-900">
+            {{ t('result.tradeoffs') }}
+            <span class="ml-2 font-mono text-[12px] font-normal text-zinc-400">{{ tradeoffs.length }}</span>
+          </h2>
+          <ul class="space-y-3">
+            <li v-for="item in tradeoffs" :key="item.tradeoff_id" class="text-[13px]">
+              <p class="font-medium text-zinc-800">{{ item.dimension }}</p>
+              <p class="mt-1 text-[12px] text-zinc-500">
+                A — {{ item.option_a || 'Option A' }}: + {{ (item.gains_a || []).join('; ') || '—' }} / − {{ (item.costs_a || []).join('; ') || '—' }}
+              </p>
+              <p class="mt-0.5 text-[12px] text-zinc-500">
+                B — {{ item.option_b || 'Option B' }}: + {{ (item.gains_b || []).join('; ') || '—' }} / − {{ (item.costs_b || []).join('; ') || '—' }}
+              </p>
+              <p class="mt-1 text-[12px] text-zinc-400">
+                evidence: {{ (item.evidence_ids || []).join(', ') || '—' }}
+              </p>
+            </li>
+          </ul>
+        </section>
+
+        <section v-if="recommendations.length" class="mt-10 border-t border-zinc-200 pt-6">
+          <h2 class="mb-3 text-[15px] font-semibold tracking-tight text-zinc-900">
+            {{ t('result.recommendations') }}
+            <span class="ml-2 font-mono text-[12px] font-normal text-zinc-400">{{ recommendations.length }}</span>
+          </h2>
+          <ul class="space-y-3">
+            <li v-for="item in recommendations" :key="item.recommendation_id" class="text-[13px]">
+              <p class="text-zinc-800">
+                <span class="font-mono text-[11px] text-zinc-400">[{{ item.status }}]</span>
+                {{ item.statement }}
+              </p>
+              <p class="mt-1 text-[12px] text-zinc-400">
+                insights: {{ (item.supporting_insight_ids || []).join(', ') || '—' }}
+                · trade-offs: {{ (item.supporting_tradeoff_ids || []).join(', ') || '—' }}
+                · evidence: {{ (item.supporting_evidence_ids || []).join(', ') || '—' }}
+              </p>
+              <p v-if="(item.limitations || []).length" class="mt-0.5 text-[12px] text-zinc-400">
+                limitations: {{ item.limitations.join('; ') }}
+              </p>
+            </li>
+          </ul>
+        </section>
 
         <!-- Sources -->
         <section class="mt-10 border-t border-zinc-200 pt-6">

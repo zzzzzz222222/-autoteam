@@ -165,8 +165,14 @@ def test_artifact_dependency_chain_matches_graph():
 
 def test_assembler_orders_sections_by_execution_layers():
     session = execute_task(TASK_SOFTWARE)
-    order = [section.agent_id for section in session.final_artifact.sections]
+    # v0.6 inserts synthesis sections (agent_id="synthesis") before the agent
+    # sections; the execution-layer order guarantee still applies to agents.
     flat_layers = [agent_id for layer in session.plan.execution_layers for agent_id in layer]
+    order = [
+        section.agent_id
+        for section in session.final_artifact.sections
+        if section.agent_id in flat_layers
+    ]
     assert order == [aid for aid in flat_layers if aid in order]
 
 

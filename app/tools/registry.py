@@ -70,14 +70,14 @@ class ToolExecutionError(ToolError):
 
 
 def mock_search(query: str) -> ToolResult:
+    stubs = _offline_web_results(query)
     return ToolResult(
         query=query,
         offline=True,
-        results=[
-            f"[mock] Overview of '{query}' — market size and growth drivers.",
-            f"[mock] Key players and positioning mentioned in '{query}' coverage.",
-            f"[mock] Recent developments and signals related to '{query}'.",
-        ],
+        results=[item.snippet for item in stubs],
+        # Provenance: same shape as web_search offline fallback so Evidence
+        # / Source collection works in mock mode (urls stay empty — never faked).
+        search_results=stubs,
     )
 
 

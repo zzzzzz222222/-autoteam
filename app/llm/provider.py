@@ -117,6 +117,8 @@ def _mock_structured(prompt: str, response_model: type[BaseModel]) -> BaseModel:
         return _mock_task_deliverable(prompt)
     if name == "AgentDeliverable":
         return _mock_agent_deliverable(prompt)
+    if name == "SynthesisResult":
+        return _mock_synthesis_result(prompt)
     values: dict[str, object] = {}
     for field_name, field in response_model.model_fields.items():
         annotation = field.annotation
@@ -183,6 +185,148 @@ def _mock_subtask_plan(prompt: str) -> "SubtaskPlan":  # noqa: F821
                 target_role="Report Writer",
             ),
         ],
+    )
+
+
+def _mock_synthesis_result(prompt: str) -> "SynthesisResult":  # noqa: F821
+    """Deterministic offline cross-agent synthesis (v0.6.0).
+
+    Parses ROLE / TASK lines and the evidence ids listed in the prompt so the
+    mock synthesis still cites real (mock) evidence ids — the same citation
+    validation path runs in offline and real mode.
+    """
+    from app.synthesis.models import (
+        Contradiction,
+        Finding,
+        Insight,
+        Recommendation,
+        SynthesisResult,
+        Tradeoff,
+        Uncertainty,
+    )
+
+    task_line = ""
+    for line in prompt.splitlines():
+        if line.startswith("TASK:"):
+            task_line = line[len("TASK:"):].strip()
+            break
+    evidence_ids: list[str] = []
+    for token in prompt.replace("|", " ").replace("(", " ").replace(")", " ").split():
+        if token.startswith("ev_") and token not in evidence_ids:
+            evidence_ids.append(token)
+    primary = evidence_ids[:2] or []
+    secondary = evidence_ids[2:4] or []
+
+    findings = [
+        Finding(
+            finding_id="find_mock_01",
+            statement=(
+                f"[offline_mock] Combined review of {len(evidence_ids)} evidence "
+                f"records for '{task_line[:80]}' identifies a shared direction "
+                "across agent outputs."
+            ),
+            evidence_ids=list(primary),
+            supporting_agents=["mock_synthesizer"],
+            support_kind="multi_source" if len(primary) > 1 else "single_source",
+        )
+    ]
+    if secondary:
+        findings.append(
+            Finding(
+                finding_id="find_mock_02",
+                statement=(
+                    "[offline_mock] Secondary evidence adds detail that only "
+                    "partially overlaps with the primary claims."
+                ),
+                evidence_ids=list(secondary),
+                supporting_agents=["mock_synthesizer"],
+                support_kind="single_source",
+            )
+        )
+    insights = [
+        Insight(
+            insight_id="ins_mock_01",
+            statement=(
+                "[offline_mock] Combining deployment-cost claims with integration "
+                "friction claims suggests the product differentiator is likely "
+                "packaging and connectivity rather than raw model capability."
+            ),
+            supporting_evidence_ids=list(primary + secondary),
+            supporting_artifact_ids=[],
+            producer_agents=["mock_synthesizer"],
+            uncertainty="offline stub — verify against real evidence",
+        )
+    ]
+    contradictions = [
+        Contradiction(
+            contradiction_id="con_mock_01",
+            claim_a="Agent A reports broad platform support for feature X.",
+            claim_b="Agent B reports no clear evidence that feature X is supported.",
+            evidence_ids=list(primary[:1] + secondary[:1]),
+            source_ids=[],
+            agents=["mock_synthesizer"],
+            status="unresolved",
+            resolution=(
+                "Available evidence is insufficient to resolve the discrepancy."
+            ),
+        )
+    ]
+    uncertainties = [
+        Uncertainty(
+            uncertainty_id="unc_mock_01",
+            statement=(
+                "[offline_mock] Pricing and ROI figures are thin in the collected "
+                "evidence; treat cost conclusions as provisional."
+            ),
+            evidence_ids=list(primary),
+            kind="insufficient_evidence",
+        )
+    ]
+    tradeoffs = [
+        Tradeoff(
+            tradeoff_id="trd_mock_01",
+            dimension="deployment cost vs capability depth",
+            option_a="Low-cost packaged agent suite",
+            option_b="Custom high-capability agent stack",
+            gains_a=["faster adoption", "lower upfront cost"],
+            costs_a=["less customization", "capability ceiling"],
+            gains_b=["deeper capability", "tighter fit"],
+            costs_b=["higher cost", "longer delivery"],
+            evidence_ids=list(primary + secondary),
+            implications=[
+                "SME segments favour option A until internal AI staffing improves."
+            ],
+        )
+    ]
+    recommendations = [
+        Recommendation(
+            recommendation_id="rec_mock_01",
+            statement=(
+                "[offline_mock] Prioritise a modular, low-deployment-cost agent "
+                "suite with standard connectors for SME customers."
+            ),
+            supporting_insight_ids=["ins_mock_01"],
+            supporting_tradeoff_ids=["trd_mock_01"],
+            supporting_evidence_ids=list(primary),
+            limitations=["offline mock recommendation — not a market verdict"],
+            status="supported" if primary else "unsupported",
+        )
+    ]
+    return SynthesisResult(
+        key_findings=findings,
+        supported_findings=findings[:1],
+        single_source_findings=findings[1:] or [],
+        cross_agent_insights=insights,
+        contradictions=contradictions,
+        uncertainties=uncertainties,
+        tradeoffs=tradeoffs,
+        recommendations=recommendations,
+        summary=(
+            f"[offline_mock] Cross-agent synthesis for '{task_line[:80]}': "
+            f"{len(findings)} findings, {len(insights)} insight(s), "
+            f"{len(contradictions)} contradiction(s), {len(tradeoffs)} trade-off(s)."
+        ),
+        notes="deterministic offline synthesis stub",
     )
 
 

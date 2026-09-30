@@ -234,11 +234,20 @@ class AgentRuntime:
         return self._format_tool_blocks(self._invoke_tools(tool_names, task, agent_id))
 
     def _collect_evidence(
-        self, collected: list[ToolResult], deliverable: AgentDeliverable
+        self,
+        collected: list[ToolResult],
+        deliverable: AgentDeliverable,
+        *,
+        agent_id: str = "",
+        artifact_id: str = "",
     ) -> tuple[list[Source], list[Evidence]]:
         """Deterministic provenance: sources come only from real tool results;
         each key point is linked to a retrieved snippet. Nothing is invented —
-        offline tool results are marked ``offline_mock`` with empty URLs."""
+        offline tool results are marked ``offline_mock`` with empty URLs.
+
+        v0.6: every evidence item carries ``producer_agent`` / ``artifact_id``
+        so the synthesis layer can trace claims end-to-end.
+        """
         sources: list[Source] = []
         snippets: list[str] = []
         for result in collected:
@@ -262,6 +271,8 @@ class AgentRuntime:
                         claim=point[:200],
                         evidence=snippets[index % len(snippets)],
                         source_id=source.id,
+                        producer_agent=agent_id,
+                        artifact_id=artifact_id,
                     )
                 )
         return sources, evidence
@@ -325,7 +336,12 @@ class AgentRuntime:
                     item for result in collected for item in result.results
                 ][:3],
             )
-        sources, evidence = self._collect_evidence(collected, deliverable)
+        sources, evidence = self._collect_evidence(
+            collected,
+            deliverable,
+            agent_id=agent_id,
+            artifact_id=f"artifact_{agent_id}",
+        )
         return deliverable, sources, evidence, used_tools
 
     @staticmethod
@@ -472,7 +488,12 @@ class AgentRuntime:
                     # Offline mode: deterministic deliverable + stub evidence.
                     prompt = self._artifact_prompt(agent_context, context.task, tool_text)
                     deliverable = self.provider.structured_completion(prompt, AgentDeliverable)
-                    sources, evidence = self._collect_evidence(collected, deliverable)
+                    sources, evidence = self._collect_evidence(
+                        collected,
+                        deliverable,
+                        agent_id=agent_id,
+                        artifact_id=f"artifact_{agent_id}",
+                    )
                     tools_used = list(agent.tools)
                 else:
                     # Real mode: LLM-driven tool-calling loop (bounded).
@@ -511,18 +532,40 @@ class AgentRuntime:
             )
             return output
         except Exception as exc:
+            friendly = _friendly_error(exc)
             self.store.record(
                 RunEvent(
                     agent_id=agent_id,
                     event="error",
                     timestamp=time.time(),
-                    message=str(exc),
+                    message=friendly,
                 )
             )
             if self.trace is not None:
                 self.trace.record(
                     "AGENT_FAILED",
                     agent_id=agent_id,
-                    message=str(exc)[:200],
+                    message=friendly,
+                    error_type=type(exc).__name__,
                 )
             raise
+
+
+def _friendly_error(exc: Exception) -> str:
+    """User-facing failure reason. Full exception stays in logs / raise chain."""
+    name = type(exc).__name__
+    text = str(exc)
+    if name in {"JSONDecodeError", "ValidationError", "SynthesisError"} or any(
+        marker in text
+        for marker in (
+            "JSONDecodeError",
+            "Expecting value",
+            "Invalid structured response",
+            "structured_completion",
+            "model_validate",
+        )
+    ):
+        return "Agent execution failed: invalid structured response"
+    if "LLM provider call failed" in text:
+        return "Agent execution failed: provider unavailable"
+    return f"Agent execution failed: {name}"

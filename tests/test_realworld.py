@@ -625,9 +625,12 @@ def test_flatten_json_coerces_numeric_scalars():
 
 def test_real_world_demo_runs_offline():
     env = dict(os.environ)
-    env.pop("AUTOTEAM_API_KEY", None)
-    env.pop("AUTOTEAM_WEB_SEARCH_URL", None)
-    env.pop("AUTOTEAM_WEB_SEARCH_API_KEY", None)
+    # Empty (not absent) so `load_dotenv()` cannot re-inject local .env keys.
+    env["AUTOTEAM_API_KEY"] = ""
+    env["LLM_API_KEY"] = ""
+    env["AUTOTEAM_WEB_SEARCH_URL"] = ""
+    env["AUTOTEAM_WEB_SEARCH_API_KEY"] = ""
+    env["AUTOTEAM_LLM_PROVIDER"] = "mock"
     env["PYTHONIOENCODING"] = "utf-8"
     completed = subprocess.run(
         [sys.executable, str(REPO_ROOT / "examples" / "real_world_demo.py")],

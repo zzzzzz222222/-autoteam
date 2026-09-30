@@ -75,6 +75,8 @@ class RunHandle:
             }
             final = None
             if session.final_artifact is not None:
+                bundle = getattr(session, "synthesis_bundle", None)
+                synthesis = getattr(bundle, "synthesis", None) if bundle is not None else None
                 final = {
                     "status": session.status.value,
                     "title": session.final_artifact.title,
@@ -92,6 +94,35 @@ class RunHandle:
                         }
                         for section in session.final_artifact.sections
                     ],
+                    "insights": (
+                        [item.model_dump() for item in synthesis.cross_agent_insights]
+                        if synthesis is not None
+                        else []
+                    ),
+                    "contradictions": (
+                        [item.model_dump() for item in synthesis.contradictions]
+                        if synthesis is not None
+                        else []
+                    ),
+                    "uncertainties": (
+                        [item.model_dump() for item in synthesis.uncertainties]
+                        if synthesis is not None
+                        else []
+                    ),
+                    "tradeoffs": (
+                        [item.model_dump() for item in synthesis.tradeoffs]
+                        if synthesis is not None
+                        else []
+                    ),
+                    "recommendations": (
+                        [item.model_dump() for item in synthesis.recommendations]
+                        if synthesis is not None
+                        else []
+                    ),
+                    "synthesis_status": str(
+                        getattr(bundle, "status", "")
+                        or session.final_artifact.metadata.get("synthesis_status", "")
+                    ),
                 }
             return {
                 "task_id": self.task_id,
@@ -165,10 +196,12 @@ class RunRegistry:
                     from app.llm.provider import get_llm_provider
 
                     provider = get_llm_provider()
+                # Offline runs must never hit live tools, even when .env
+                # carries real search keys (LLM stays mock via provider=None).
                 session = execute_task(
                     handle.task,
                     provider=provider,
-                    tool_mode="auto",
+                    tool_mode="auto" if handle.mode == "real" else "mock",
                     criteria=CompletionCriteria(
                         minimum_successful_agents=1, allow_partial=True
                     ),

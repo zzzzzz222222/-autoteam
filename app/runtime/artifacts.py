@@ -109,11 +109,18 @@ class Source(BaseModel):
 
 class Evidence(BaseModel):
     """A claim backed by a registered source. ``source_id`` must exist in the
-    artifact's ``source_records`` (validated by ``app.runtime.validation``)."""
+    artifact's ``source_records`` (validated by ``app.runtime.validation``).
+
+    v0.6: provenance fields are filled deterministically by the runtime /
+    synthesis pipeline — never proposed by the LLM.
+    """
 
     claim: str
     evidence: str = ""
     source_id: str
+    evidence_id: str = ""  # v0.6 stable id (filled by EvidenceFilter)
+    producer_agent: str = ""  # v0.6
+    artifact_id: str = ""  # v0.6
 
 
 class ToolCall(BaseModel):
