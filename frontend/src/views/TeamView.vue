@@ -89,7 +89,7 @@ function isIncident(edge: { source: string; target: string }): boolean {
 // Edge geometry — measured from the rendered nodes (never inferred from data).
 // ---------------------------------------------------------------------------
 const graphInner = ref<HTMLElement | null>(null)
-const nodeRects = ref<Record<string, { left: number; right: number; centerY: number }>>({})
+const nodeRects = ref<Record<string, { left: number; right: number; centerY: number; height: number }>>({})
 const svgSize = ref({ width: 0, height: 0 })
 
 let rafId = 0
@@ -99,7 +99,7 @@ function measure() {
     const inner = graphInner.value
     if (!inner) return
     const base = inner.getBoundingClientRect()
-    const rects: Record<string, { left: number; right: number; centerY: number }> = {}
+    const rects: Record<string, { left: number; right: number; centerY: number; height: number }> = {}
     inner.querySelectorAll<HTMLElement>('[data-agent-id]').forEach((el) => {
       const id = el.dataset.agentId
       if (!id) return
@@ -109,6 +109,7 @@ function measure() {
         left: r.left - base.left,
         right: r.right - base.left,
         centerY: r.top - base.top + r.height / 2,
+        height: r.height,
       }
     })
     nodeRects.value = rects
@@ -119,18 +120,39 @@ function measure() {
   })
 }
 
+// Spread the endpoints of edges that share a node so several edges into/out of
+// the same Agent do not collapse onto one another (each edge stays traceable).
+function edgeOffsetY(index: number, count: number, height: number): number {
+  if (count <= 1) return 0
+  const span = Math.min(22, Math.max(0, height * 0.55))
+  return -span / 2 + (span / (count - 1)) * index
+}
+
 const edgeShapes = computed<GraphEdgeShape[]>(() => {
   const rects = nodeRects.value
+  const edges = realEdges.value
+  const outCount = new Map<string, number>()
+  const inCount = new Map<string, number>()
+  for (const e of edges) {
+    outCount.set(e.source, (outCount.get(e.source) ?? 0) + 1)
+    inCount.set(e.target, (inCount.get(e.target) ?? 0) + 1)
+  }
+  const outSeen = new Map<string, number>()
+  const inSeen = new Map<string, number>()
   const shapes: GraphEdgeShape[] = []
-  for (const edge of realEdges.value) {
+  for (const edge of edges) {
     const source = rects[edge.source]
     const target = rects[edge.target]
     if (!source || !target) continue
+    const oi = outSeen.get(edge.source) ?? 0
+    outSeen.set(edge.source, oi + 1)
+    const ii = inSeen.get(edge.target) ?? 0
+    inSeen.set(edge.target, ii + 1)
     const x1 = source.right
-    const y1 = source.centerY
-    const x2 = target.left - 8 // leave room for the arrow head
-    const y2 = target.centerY
-    const dx = Math.max(28, Math.abs(x2 - x1) / 2)
+    const y1 = source.centerY + edgeOffsetY(oi, outCount.get(edge.source) ?? 1, source.height)
+    const x2 = target.left - 9 // leave room for the arrow head
+    const y2 = target.centerY + edgeOffsetY(ii, inCount.get(edge.target) ?? 1, target.height)
+    const dx = Math.max(26, (x2 - x1) * 0.5)
     shapes.push({
       id: `${edge.source}->${edge.target}`,
       d: `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`,
@@ -216,12 +238,12 @@ watch([layerColumns, () => team.value?.agents.length], () => {
       </div>
 
       <div v-if="layerColumns.length" class="at-graph overflow-x-auto pb-2">
-        <div ref="graphInner" class="at-graph__inner flex min-w-full items-start gap-6">
+        <div ref="graphInner" class="at-graph__inner flex min-w-full items-start justify-between gap-8">
           <GraphEdgeLayer :width="svgSize.width" :height="svgSize.height" :edges="edgeShapes" />
           <div
             v-for="(layer, idx) in layerColumns"
             :key="layerKey(layer)"
-            class="relative z-10 flex min-w-[190px] flex-1 flex-col gap-4"
+            class="relative z-10 flex w-[236px] shrink-0 flex-col gap-3"
           >
             <p class="at-mono at-t-xs uppercase tracking-[0.14em] at-dim">{{ t('team.layer') }} {{ idx + 1 }}</p>
             <button
@@ -229,17 +251,16 @@ watch([layerColumns, () => team.value?.agents.length], () => {
               :key="agent.id"
               :data-agent-id="agent.id"
               type="button"
-              class="at-card at-graph__node w-full cursor-pointer px-4 py-3.5 text-left transition-colors"
+              class="at-card at-graph__node w-full cursor-pointer px-3.5 py-2 text-left transition-colors"
               :class="selectedAgentId === agent.id ? 'border-[var(--at-info)]' : 'hover:border-[var(--at-border-strong)]'"
               :aria-pressed="selectedAgentId === agent.id"
               @click="selectedAgentId = agent.id"
             >
-              <div class="flex items-center justify-between gap-3">
-                <span class="truncate at-t-lg font-semibold at-fg">{{ agent.name }}</span>
+              <div class="flex items-center justify-between gap-2.5">
+                <span class="truncate at-t-md font-semibold at-fg">{{ agent.name }}</span>
                 <AgentStatus :status="(store.agentStatuses as Record<string, string>)[agent.id] || agent.status" />
               </div>
-              <p class="mt-1.5 truncate font-mono at-t-xs at-dim">{{ (agent.tools || []).join(' · ') || '—' }}</p>
-              <p class="mt-2 line-clamp-2 at-t-xs at-muted">{{ (agent.capabilities || []).join(', ') }}</p>
+              <p class="mt-1 truncate font-mono at-t-xs at-dim">{{ (agent.tools || []).join(' · ') || '—' }}</p>
             </button>
           </div>
         </div>

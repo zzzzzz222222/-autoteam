@@ -212,20 +212,20 @@ a { color: inherit; text-decoration: none; }
   pointer-events: none;
 }
 .at-graph__edge {
-  stroke: var(--at-border-strong);
-  stroke-width: 1.5;
+  stroke: var(--at-fg-dim);
+  stroke-width: 1.6;
   transition: stroke var(--at-dur) var(--at-ease), opacity var(--at-dur) var(--at-ease),
     stroke-width var(--at-dur) var(--at-ease);
 }
 .at-graph__edge.is-active {
   stroke: var(--at-info);
-  stroke-width: 2.25;
+  stroke-width: 2.4;
 }
 .at-graph__edge.is-dim {
-  opacity: 0.16;
+  opacity: 0.55;
 }
 .at-graph__arrow {
-  fill: var(--at-border-strong);
+  fill: var(--at-fg-dim);
 }
 .at-graph__arrow.is-active {
   fill: var(--at-info);
