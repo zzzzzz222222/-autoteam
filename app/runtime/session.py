@@ -121,11 +121,18 @@ def execute_task(
     max_iterations: int = 5,
     provider_fallback: bool = False,
 ) -> TaskExecutionSession:
-    """Run one full task session offline-first through the existing engine."""
+    """Run one full task session offline-first through the existing engine.
+
+    Offline runs must stay offline: when the provider is the deterministic mock
+    (or unset), tools are forced to ``mock`` so a stray real search key in the
+    environment can never turn an "Offline" run into a live one.
+    """
     session = TaskExecutionSession(task, criteria)
     session.status = SessionStatus.RUNNING
     session.started_at = time.time()
     session.provider_name = type(provider).__name__ if provider is not None else "MockLLMProvider"
+    if provider is None or isinstance(provider, MockLLMProvider):
+        tool_mode = "mock"
     trace = session.trace
     trace.record("TASK_STARTED", message=task[:200])
 

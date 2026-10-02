@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import UnitIcon from '@/components/UnitIcon.vue'
+import { useI18n } from '@/i18n'
 import type { AgentStatus as S } from '@/types'
 
 const props = withDefaults(
@@ -10,34 +12,33 @@ const props = withDefaults(
   { label: false },
 )
 
+const { t } = useI18n()
+
+// Status is conveyed by icon + text + colour (never colour alone).
 const meta = computed(() => {
-  const s = props.status as S
-  switch (s) {
+  switch (props.status as S) {
     case 'success':
-      return { glyph: '✓', cls: 'text-emerald-600', running: false, label: 'completed' }
+      return { icon: 'check' as const, cls: 'at-success-text', running: false, key: 'agentstatus.completed' }
     case 'running':
-      return { glyph: '●', cls: 'text-blue-600', running: true, label: 'running' }
-    case 'ready':
-      return { glyph: '○', cls: 'text-zinc-400', running: false, label: 'ready' }
+      return { icon: 'dot' as const, cls: 'at-info', running: true, key: 'agentstatus.running' }
     case 'retry':
-      return { glyph: '↻', cls: 'text-amber-600', running: true, label: 'retrying' }
+      return { icon: 'refreshCw' as const, cls: 'at-warn-text', running: true, key: 'agentstatus.retrying' }
     case 'failed':
-      return { glyph: '✕', cls: 'text-red-600', running: false, label: 'failed' }
+      return { icon: 'x' as const, cls: 'at-danger-text', running: false, key: 'agentstatus.failed' }
+    case 'ready':
+      return { icon: 'dot' as const, cls: 'at-dim', running: false, key: 'agentstatus.ready' }
     case 'skipped':
-      return { glyph: '⊘', cls: 'text-zinc-300', running: false, label: 'skipped' }
+      return { icon: 'dot' as const, cls: 'at-dim', running: false, key: 'agentstatus.skipped' }
     default:
-      return { glyph: '○', cls: 'text-zinc-300', running: false, label: (s || 'pending').toLowerCase() }
+      return { icon: 'dot' as const, cls: 'at-dim', running: false, key: 'agentstatus.pending' }
   }
 })
 </script>
 
 <template>
-  <span class="inline-flex items-center gap-1.5 text-xs">
-    <span
-      class="inline-block h-2 w-2 rounded-full border border-current"
-      :class="[meta.cls, meta.running ? 'at-status-pulse' : '']"
-      aria-hidden="true"
-    />
-    <span v-if="label" class="text-zinc-500">{{ meta.label }}</span>
+  <span class="inline-flex items-center gap-1.5" :title="t(meta.key)">
+    <UnitIcon :name="meta.icon" :size="13" :class="[meta.cls, meta.running ? 'at-status-pulse' : '']" />
+    <span v-if="label" class="at-t-xs" :class="meta.cls">{{ t(meta.key) }}</span>
+    <span v-else class="sr-only">{{ t(meta.key) }}</span>
   </span>
 </template>

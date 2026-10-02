@@ -19,8 +19,10 @@ from app.synthesis.assembler import assemble_from_bundle
 from app.synthesis.evidence_filter import (
     collect_evidence_records,
     validate_evidence_references,
+    validate_report_references,
 )
 from app.synthesis.models import (
+    EvidenceRecord,
     Finding,
     Insight,
     Recommendation,
@@ -421,3 +423,166 @@ def test_tradoff_model_shape():
     assert item.gains_a and item.costs_b
     unc = Uncertainty(uncertainty_id="u1", statement="thin", kind="insufficient_evidence")
     assert unc.kind == "insufficient_evidence"
+
+
+# ---------------------------------------------------------------------------
+# v0.6.0 final polish: data nature, deterministic support, provenance audit
+# ---------------------------------------------------------------------------
+
+
+def test_support_kind_is_derived_from_cited_evidence():
+    """Support status comes from the *cited* evidence, never from a raw count."""
+    two_agents = [
+        _artifact("agent_a", claims=[("claim a", "ea", "src_agent_a_1")]),
+        _artifact("agent_b", claims=[("claim b", "eb", "src_agent_b_1")]),
+    ]
+    evidence, _ = collect_evidence_records(two_agents)
+    ids = [item.evidence_id for item in evidence]
+    proposed = SynthesisResult(
+        key_findings=[
+            Finding(finding_id="f_cross", statement="cross", evidence_ids=list(ids)),
+            Finding(finding_id="f_one", statement="single", evidence_ids=[ids[0]]),
+            Finding(finding_id="f_none", statement="none", evidence_ids=[]),
+        ]
+    )
+    cleaned = validate_synthesis(proposed, evidence)
+    by_id = {item.finding_id: item for item in cleaned.key_findings}
+    assert by_id["f_cross"].support_kind == "multi_source"
+    assert by_id["f_one"].support_kind == "single_source"
+    assert by_id["f_none"].support_kind == "unsupported"
+    # agents are derived deterministically, not whatever the LLM proposed
+    assert set(by_id["f_cross"].supporting_agents) == {"Agent A", "Agent B"}
+
+
+def test_same_evidence_count_but_single_agent_is_not_multi_source():
+    single_agent = [
+        _artifact(
+            "solo_agent",
+            claims=[("c1", "e1", "src_solo_agent_1"), ("c2", "e2", "src_solo_agent_1")],
+        )
+    ]
+    evidence, _ = collect_evidence_records(single_agent)
+    ids = [item.evidence_id for item in evidence]
+    finding = Finding(finding_id="f", statement="x", evidence_ids=list(ids))
+    cleaned = validate_synthesis(SynthesisResult(key_findings=[finding]), evidence)
+    assert cleaned.key_findings[0].support_kind == "single_source"
+
+
+def test_insight_contributing_agents_and_single_agent_flag():
+    two_agents = [
+        _artifact("agent_a", claims=[("a", "ea", "src_agent_a_1")]),
+        _artifact("agent_b", claims=[("b", "eb", "src_agent_b_1")]),
+    ]
+    evidence, _ = collect_evidence_records(two_agents)
+    ids = [item.evidence_id for item in evidence]
+    cleaned = validate_synthesis(
+        SynthesisResult(
+            cross_agent_insights=[
+                Insight(insight_id="i_cross", statement="both", supporting_evidence_ids=list(ids)),
+                Insight(insight_id="i_one", statement="one", supporting_evidence_ids=[ids[0]]),
+            ]
+        ),
+        evidence,
+    )
+    by_id = {item.insight_id: item for item in cleaned.cross_agent_insights}
+    assert set(by_id["i_cross"].contributing_agents) == {"Agent A", "Agent B"}
+    assert len(by_id["i_one"].contributing_agents) == 1
+    # a single-agent insight is explicitly flagged, never dressed as cross-agent
+    assert by_id["i_one"].uncertainty
+
+
+def test_claim_type_whitelist_and_unknown_becomes_unclassified():
+    valid = Finding(finding_id="f", statement="s", claim_type="source_fact")
+    unknown = Finding(finding_id="f2", statement="s", claim_type="totally-made-up")
+    assert valid.claim_type == "source_fact"
+    assert unknown.claim_type == ""  # never guess a data nature
+
+
+def test_claim_type_renders_in_markdown_when_present():
+    artifacts = [_artifact("agent_a", claims=[("Market size is $5B", "e", "src_agent_a_1")])]
+    bundle = run_synthesis_pipeline("t", artifacts, provider=MockLLMProvider())
+    assert bundle.status == "completed"
+    markdown = assemble_from_bundle("t", artifacts, bundle, ["agent_a"]).to_markdown()
+    # the offline mock tags its own claims honestly
+    assert "nature: unverified_claim" in markdown or "nature: derived_estimate" in markdown
+
+
+def test_reference_audit_flags_dangling_ids_without_rejecting_report():
+    artifacts = [
+        _artifact("agent_a", claims=[("ok", "e", "src_agent_a_1")]),
+        _artifact("agent_b", claims=[("ok2", "e", "src_agent_b_1")]),
+    ]
+    bundle = run_synthesis_pipeline("t", artifacts, provider=MockLLMProvider())
+    assert bundle.reference_issues == []  # a well-formed pipeline has no dangling refs
+    # force a dangling reference and make sure the audit reports it (no silent pass)
+    bundle.evidence = bundle.evidence[:1]
+    issues = validate_report_references(bundle)
+    assert issues
+    assert any("missing" in issue for issue in issues)
+
+
+def test_trace_records_deterministic_synthesis_validation():
+    from app.runtime.events import ExecutionTrace
+
+    artifacts = [
+        _artifact("agent_a", claims=[("a", "e", "src_agent_a_1")]),
+        _artifact("agent_b", claims=[("b", "e", "src_agent_b_1")]),
+    ]
+    trace = ExecutionTrace("run_validate")
+    run_synthesis_pipeline("t", artifacts, provider=MockLLMProvider(), trace=trace)
+    assert "SYNTHESIS_VALIDATED" in [event.type for event in trace.events]
+
+
+def test_session_legacy_fallback_when_pipeline_crashes(monkeypatch):
+    """If the synthesis pipeline itself raises, the session must degrade to the
+    legacy assembler and record the real degraded status — never fake success."""
+    import app.runtime.session as session_module
+    import app.synthesis.pipeline as pipeline_module
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("pipeline exploded")
+
+    monkeypatch.setattr(pipeline_module, "run_synthesis_pipeline", boom)
+    session = session_module.execute_task("分析 AI Agent 市场")
+    assert session.final_artifact is not None
+    assert session.final_artifact.metadata.get("synthesis_status") == "failed"
+    assert session.synthesis_bundle is None
+
+def test_new_fields_are_backward_compatible_with_old_payloads():
+    """Old synthesis payloads / artifacts (without v0.6.0 fields) must parse."""
+    legacy_finding = {
+        "finding_id": "f1",
+        "statement": "s",
+        "evidence_ids": [],
+        "supporting_agents": [],
+        "support_kind": "unsupported",
+    }
+    finding = Finding.model_validate(legacy_finding)
+    assert finding.claim_type == "" and finding.derivation == ""
+
+    insight = Insight.model_validate(
+        {"insight_id": "i1", "statement": "s", "supporting_evidence_ids": []}
+    )
+    assert insight.contributing_agents == [] and insight.claim_type == ""
+
+    rec = Recommendation.model_validate({"recommendation_id": "r1", "statement": "s"})
+    assert rec.claim_type == ""
+
+    ev = EvidenceRecord.model_validate({"evidence_id": "ev1", "claim": "c"})
+    assert ev.claim_type == ""
+
+
+def test_final_result_response_accepts_legacy_payload():
+    from app.api.models import FinalResultResponse
+
+    legacy = {
+        "task_id": "t1",
+        "status": "success",
+        "sources": [],
+        "evidence": [],
+        "sections": [],
+    }
+    parsed = FinalResultResponse.model_validate(legacy)
+    assert parsed.findings == []
+    assert parsed.reference_issues == []
+    assert parsed.synthesis_status == ""

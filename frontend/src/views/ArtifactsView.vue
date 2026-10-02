@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { api } from '@/api/client'
 import { useTeamStore } from '@/stores/team'
 import { useI18n } from '@/i18n'
-import { prettyJson } from '@/utils/format'
+import UnitIcon from '@/components/UnitIcon.vue'
+import { hostOf, prettyJson, safeHttpUrl, truncateMiddle } from '@/utils/format'
 import type { ArtifactDto } from '@/types'
 
 const props = defineProps<{ taskId: string }>()
@@ -13,236 +14,273 @@ const { t } = useI18n()
 const artifacts = ref<ArtifactDto[]>([])
 const error = ref<string | null>(null)
 const selectedId = ref<string | null>(null)
+const highlightedId = ref('')
 
-// ordered by dependency depth = collaboration flow
-const ordered = computed(() => {
-  const ids = new Set(artifacts.value.map((a) => a.artifact_id))
+const byId = computed(() => {
+  const map = new Map<string, ArtifactDto>()
+  for (const a of artifacts.value) map.set(a.artifact_id, a)
+  return map
+})
+
+// Real dependency depth, derived from the backend `dependencies` edges only
+// (entry artifacts = 0). Used instead of a rank-like running index (M9).
+const depthById = computed(() => {
   const depth = new Map<string, number>()
-  const computeDepth = (a: ArtifactDto, seen: Set<string>): number => {
-    if (depth.has(a.artifact_id)) return depth.get(a.artifact_id)!
+  const visit = (a: ArtifactDto, seen: Set<string>): number => {
+    const cached = depth.get(a.artifact_id)
+    if (cached !== undefined) return cached
     if (seen.has(a.artifact_id)) return 0
     seen.add(a.artifact_id)
-    const up = a.dependencies.filter((d) => ids.has(d))
-    const value = up.length ? 1 + Math.max(...up.map((d) => {
-      const upArt = artifacts.value.find((x) => x.artifact_id === d)
-      return upArt ? computeDepth(upArt, seen) : 0
-    })) : 0
+    const ups = a.dependencies.filter((d) => byId.value.has(d))
+    const value = ups.length
+      ? 1 + Math.max(...ups.map((d) => visit(byId.value.get(d) as ArtifactDto, seen)))
+      : 0
     depth.set(a.artifact_id, value)
     return value
   }
-  for (const a of artifacts.value) computeDepth(a, new Set())
-  return [...artifacts.value].sort(
-    (x, y) => (depth.get(x.artifact_id) ?? 0) - (depth.get(y.artifact_id) ?? 0),
-  )
+  for (const a of artifacts.value) visit(a, new Set())
+  return depth
 })
 
-const selected = computed(() =>
-  ordered.value.find((a) => a.artifact_id === selectedId.value) ?? null,
+// Collaboration flow ordered by depth.
+const ordered = computed(() =>
+  [...artifacts.value].sort(
+    (x, y) => (depthById.value.get(x.artifact_id) ?? 0) - (depthById.value.get(y.artifact_id) ?? 0),
+  ),
 )
 
-// consumers = artifacts that list this artifact as dependency
-function consumersOf(artifact: ArtifactDto): ArtifactDto[] {
-  return ordered.value.filter((a) => a.dependencies.includes(artifact.artifact_id))
+const selected = computed(() => (selectedId.value ? byId.value.get(selectedId.value) ?? null : null))
+
+// Upstream / downstream are real artifact-level edges (never agent-level faked).
+function upstreamOf(a: ArtifactDto): ArtifactDto[] {
+  return a.dependencies.map((d) => byId.value.get(d)).filter((x): x is ArtifactDto => !!x)
+}
+function missingDepsOf(a: ArtifactDto): string[] {
+  return a.dependencies.filter((d) => !byId.value.has(d))
+}
+function consumersOf(a: ArtifactDto): ArtifactDto[] {
+  return ordered.value.filter((x) => x.dependencies.includes(a.artifact_id))
+}
+function depthOf(id: string): number {
+  return depthById.value.get(id) ?? 0
 }
 
 async function load() {
   try {
     const res = await api.getArtifacts(props.taskId)
     artifacts.value = res.artifacts
-    if (!selectedId.value && res.artifacts.length) {
-      selectedId.value = res.artifacts[0].artifact_id
-    }
+    selectedId.value = res.artifacts.length ? res.artifacts[0].artifact_id : null
   } catch (err) {
     error.value = String(err)
   }
 }
-
 onMounted(load)
 watch(() => props.taskId, load)
+
+function locateArtifact(id: string) {
+  selectedId.value = id
+  void nextTick(() => {
+    const el = document.getElementById(`artifact-tile-${id}`) ?? document.getElementById('artifact-detail')
+    if (!el) return
+    const reduce =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' })
+    highlightedId.value = `artifact-tile-${id}`
+    window.setTimeout(() => (highlightedId.value = ''), 1900)
+  })
+}
+function isHighlighted(id: string): boolean {
+  return highlightedId.value === id
+}
 
 function modeHint(): 'real' | 'offline' {
   return store.current?.mode === 'real' ? 'real' : 'offline'
 }
+function href(url?: string): string | null {
+  return safeHttpUrl(url)
+}
+function sourceLinkLabel(source: { title: string; url: string; id: string }): string {
+  return source.title || hostOf(source.url) || truncateMiddle(source.url, 48) || source.id
+}
+function artifactLabel(a: ArtifactDto): string {
+  return a.title || a.artifact_id
+}
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1400px] px-10 py-10">
+  <div class="mx-auto w-full max-w-[1400px] px-6 py-8 md:px-10 md:py-10">
     <!-- header -->
-    <div class="mb-8 flex items-end justify-between gap-6">
+    <div class="mb-8 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <p class="tok-eyebrow mb-2">{{ t('art.flow') }}</p>
-        <h1 class="text-[20px] font-semibold tracking-tight text-zinc-900">{{ t('art.flow_title') }}</h1>
-        <p class="mt-2 text-[13px] text-zinc-400">
+        <h1 class="at-h2 at-t-xl">{{ t('art.flow_title') }}</h1>
+        <p class="mt-2 at-t-xs at-dim">
           {{ ordered.length }} {{ t('art.artifacts_count') }} · {{ t('art.flow_sub') }}
         </p>
       </div>
-      <p v-if="error" class="text-[15px] text-red-600">{{ error }}</p>
+      <p v-if="error" role="alert" class="at-t-base at-danger-text">{{ error }} <span class="at-t-xs at-muted">{{ t('common.error_reload_hint') }}</span></p>
     </div>
 
-    <div class="grid grid-cols-12 gap-10">
-      <!-- Collaboration flow: compact 2×2 tiles ordered by dependency depth -->
-      <div class="col-span-12">
-        <div v-if="ordered.length" class="grid grid-cols-2 gap-4">
-          <template v-for="(artifact, idx) in ordered" :key="artifact.artifact_id">
-            <button
-              type="button"
-              class="at-card group flex min-h-[168px] flex-col text-left transition-colors"
-              :class="selectedId === artifact.artifact_id
-                ? 'border-blue-600 ring-2 ring-blue-600/15'
-                : 'hover:border-zinc-400'"
-              @click="selectedId = artifact.artifact_id"
+    <!-- Collaboration flow -->
+    <section class="mb-10">
+      <h2 class="at-eyebrow mb-3">{{ t('art.flow') }}</h2>
+
+      <div v-if="ordered.length" class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <button
+          v-for="artifact in ordered"
+          :id="`artifact-tile-${artifact.artifact_id}`"
+          :key="artifact.artifact_id"
+          type="button"
+          class="at-card flex min-h-[164px] flex-col text-left transition-colors"
+          :class="[
+            selectedId === artifact.artifact_id ? 'border-[var(--at-info)]' : 'hover:border-[var(--at-border-strong)]',
+            isHighlighted(`artifact-tile-${artifact.artifact_id}`) ? 'at-locate-flash' : '',
+          ]"
+          :aria-pressed="selectedId === artifact.artifact_id"
+          @click="selectedId = artifact.artifact_id"
+        >
+          <div class="flex items-start gap-3 px-5 pt-5">
+            <span
+              class="at-chip shrink-0"
+              :class="selectedId === artifact.artifact_id ? 'at-chip--info' : ''"
+              :aria-label="`${t('art.depth')} ${depthOf(artifact.artifact_id)}`"
             >
-              <div class="flex items-start gap-4 px-5 pt-5">
-                <span
-                  class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border font-mono text-[13px] font-medium"
-                  :class="selectedId === artifact.artifact_id
-                    ? 'border-blue-600 bg-blue-600 text-white'
-                    : 'border-zinc-200 text-zinc-500'"
-                >
-                  {{ String(idx + 1).padStart(2, '0') }}
-                </span>
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span class="line-clamp-2 text-[15px] font-semibold leading-snug tracking-tight text-zinc-900" :title="artifact.title || artifact.artifact_id">
-                      {{ artifact.title || artifact.artifact_id }}
-                    </span>
-                    <span class="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-500">
-                      {{ artifact.output_type }}
-                    </span>
-                  </div>
-                  <p class="mt-1.5 text-[13px] text-zinc-500">
-                    {{ t('art.produced_by') }}
-                    <span class="font-medium text-zinc-700">{{ artifact.agent_name }}</span>
-                  </p>
-                </div>
-                <span
-                  class="shrink-0 text-[15px] font-medium"
-                  :class="selectedId === artifact.artifact_id ? 'text-blue-600' : 'text-zinc-300'"
-                >
-                  →
-                </span>
-              </div>
-              <div class="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-4 pt-3 text-[12px] text-zinc-400">
-                <span v-if="artifact.dependencies.length">
-                  {{ artifact.dependencies.length }} {{ t('art.upstream') }}
-                </span>
-                <span v-if="consumersOf(artifact).length" class="min-w-0 truncate">
-                  → {{ consumersOf(artifact).map((c) => c.agent_name).join(', ') }}
-                </span>
-                <span v-if="artifact.source_records.length">{{ artifact.source_records.length }} sources</span>
-                <span v-if="artifact.evidence.length">{{ artifact.evidence.length }} evidence</span>
-              </div>
-            </button>
-          </template>
-        </div>
-        <p v-else-if="!error" class="py-16 text-center text-[15px] text-zinc-400">
-          {{ t('art.none') }}
-        </p>
-      </div>
-
-      <!-- Detail panel (below the list, full width — never blocks the flow) -->
-      <div class="col-span-12">
-        <p class="tok-eyebrow mb-3">{{ t('art.artifact_label') }}</p>
-
-        <div v-if="selected" class="at-card p-6">
-          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2 class="text-[18px] font-semibold tracking-tight text-zinc-900">
-              {{ selected.title || selected.artifact_id }}
-            </h2>
-            <span class="text-[14px] text-zinc-500">
-              {{ selected.agent_name }} · {{ selected.output_type }}
+              {{ t('art.depth') }} {{ depthOf(artifact.artifact_id) }}
             </span>
-          </div>
-
-          <div class="mt-4 flex gap-8 border-y border-zinc-200 py-3">
-            <div>
-              <p class="tok-metric">{{ selected.source_records.length }}</p>
-              <p class="text-[13px] text-zinc-400">{{ t('art.sources') }}</p>
-            </div>
-            <div>
-              <p class="tok-metric">{{ selected.evidence.length }}</p>
-              <p class="text-[13px] text-zinc-400">{{ t('art.evidence') }}</p>
-            </div>
-            <div>
-              <p class="tok-metric">{{ selected.dependencies.length }}</p>
-              <p class="text-[13px] text-zinc-400">{{ t('art.upstream') }}</p>
-            </div>
-            <div v-if="consumersOf(selected).length" class="min-w-0">
-              <p class="text-[13px] text-zinc-400">{{ t('art.consumed') }}</p>
-              <p class="mt-1 text-[14px] text-zinc-700">
-                {{ consumersOf(selected).map((c) => c.agent_name).join(', ') }}
-              </p>
-            </div>
-          </div>
-
-          <div class="mt-5 grid grid-cols-12 gap-8">
-            <div v-if="Object.keys(selected.structured_data).length" class="col-span-5">
-              <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
-                {{ t('art.key_data') }}
-              </p>
-              <pre class="mt-2 max-h-72 overflow-y-auto rounded bg-zinc-50 p-3 font-mono text-[13px] leading-relaxed text-zinc-600">{{
-                prettyJson(selected.structured_data)
-              }}</pre>
-            </div>
-
-            <div class="col-span-7">
-              <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
-                {{ t('art.content') }}
-              </p>
-              <p class="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-[14px] leading-relaxed text-zinc-700">
-                {{ selected.content }}
-              </p>
-            </div>
-          </div>
-
-          <div v-if="selected.evidence.length" class="mt-6">
-            <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
-              {{ t('art.evidence') }}
-            </p>
-            <ul class="mt-2 grid grid-cols-1 gap-3 md:grid-cols-2">
-              <li v-for="(ev, i) in selected.evidence" :key="i" class="text-[14px]">
-                <p class="text-zinc-700">
-                  <span class="font-mono text-[11px] text-zinc-300">#{{ i + 1 }}</span> {{ ev.claim }}
-                </p>
-                <p class="mt-0.5 pl-5 text-[12px] text-zinc-400">{{ ev.evidence }}</p>
-              </li>
-            </ul>
-          </div>
-
-          <div v-if="selected.source_records.length" class="mt-6">
-            <p class="text-[12px] font-semibold uppercase tracking-wide text-zinc-400">
-              {{ t('art.sources') }}
-            </p>
-            <ul class="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
-              <li v-for="source in selected.source_records" :key="source.id" class="text-[13px]">
-                <a
-                  v-if="source.url"
-                  :href="source.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-blue-600 underline underline-offset-2 hover:text-blue-700"
-                >
-                  {{ source.title || source.url }}
-                </a>
-                <span v-else class="text-zinc-400">
-                  {{ source.title }} <span class="text-zinc-300">{{ t('art.offline') }}</span>
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span class="line-clamp-2 at-t-md font-semibold leading-snug at-fg" :title="artifactLabel(artifact)">
+                  {{ artifactLabel(artifact) }}
                 </span>
-                <span class="ml-2 rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-500">
-                  {{ source.source_type }}
-                </span>
-              </li>
-            </ul>
+                <span class="at-chip">{{ artifact.output_type }}</span>
+              </div>
+              <p class="mt-1.5 at-t-xs at-dim">
+                {{ t('art.produced_by') }} <span class="at-muted">{{ artifact.agent_name }}</span>
+              </p>
+            </div>
           </div>
+          <div class="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pb-4 pt-3 font-mono at-t-xs at-dim">
+            <span>{{ upstreamOf(artifact).length }} {{ t('art.upstream') }}</span>
+            <span>{{ consumersOf(artifact).length }} {{ t('art.downstream_title') }}</span>
+            <span v-if="artifact.source_records.length">{{ artifact.source_records.length }} {{ t('art.sources') }}</span>
+            <span v-if="artifact.evidence.length">{{ artifact.evidence.length }} {{ t('art.evidence') }}</span>
+          </div>
+        </button>
+      </div>
+      <div v-else-if="!error" class="at-card flex flex-col items-center gap-2 py-16 text-center">
+        <UnitIcon name="inbox" :size="22" class="at-dim" />
+        <p class="at-t-base at-muted">{{ t('art.none') }}</p>
+      </div>
+    </section>
 
-          <p class="mt-6 text-[12px] text-zinc-400">
-            {{ modeHint() === 'real' ? t('art.mode_real') : t('art.mode_offline') }}
-          </p>
+    <!-- Detail -->
+    <section id="artifact-detail">
+      <h2 class="at-eyebrow mb-3">{{ t('art.artifact_label') }}</h2>
+
+      <div v-if="selected" class="at-card p-5 md:p-6">
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h3 class="at-t-lg font-semibold at-fg">{{ artifactLabel(selected) }}</h3>
+          <span class="at-t-sm"><span class="at-muted">{{ selected.agent_name }}</span> <span class="at-dim">{{ selected.output_type }}</span></span>
         </div>
 
-        <p v-else class="at-card p-5 text-[14px] text-zinc-400">
-          {{ t('art.select') }}
+        <div class="at-border-b at-border-t mt-4 flex flex-wrap gap-8 py-3">
+          <div>
+            <p class="at-metric">{{ selected.source_records.length }}</p>
+            <p class="at-t-xs at-dim">{{ t('art.sources') }}</p>
+          </div>
+          <div>
+            <p class="at-metric">{{ selected.evidence.length }}</p>
+            <p class="at-t-xs at-dim">{{ t('art.evidence') }}</p>
+          </div>
+          <div>
+            <p class="at-metric">{{ depthOf(selected.artifact_id) }}</p>
+            <p class="at-t-xs at-dim">{{ t('art.depth') }}</p>
+          </div>
+        </div>
+
+        <!-- Upstream / downstream (real artifact-level edges) -->
+        <div class="mt-5 grid grid-cols-12 gap-6">
+          <div class="col-span-12 md:col-span-6">
+            <h4 class="at-eyebrow mb-2">{{ t('art.upstream_title') }}</h4>
+            <ul v-if="upstreamOf(selected).length || missingDepsOf(selected).length" class="flex flex-wrap gap-1.5">
+              <li v-for="up in upstreamOf(selected)" :key="up.artifact_id">
+                <button type="button" class="at-chip at-chip--link" @click="locateArtifact(up.artifact_id)">
+                  {{ artifactLabel(up) }}
+                </button>
+              </li>
+              <li v-for="mid in missingDepsOf(selected)" :key="mid">
+                <span class="at-chip at-chip--warn">{{ mid }} · {{ t('art.ref_missing') }}</span>
+              </li>
+            </ul>
+            <p v-else class="at-t-xs at-dim">{{ t('art.no_upstream') }}</p>
+          </div>
+
+          <div class="col-span-12 md:col-span-6">
+            <h4 class="at-eyebrow mb-2">{{ t('art.downstream_title') }}</h4>
+            <ul v-if="consumersOf(selected).length" class="flex flex-wrap gap-1.5">
+              <li v-for="down in consumersOf(selected)" :key="down.artifact_id">
+                <button type="button" class="at-chip at-chip--link" @click="locateArtifact(down.artifact_id)">
+                  {{ artifactLabel(down) }}
+                </button>
+              </li>
+            </ul>
+            <p v-else class="at-t-xs at-dim">{{ t('art.no_downstream') }}</p>
+          </div>
+        </div>
+        <p class="mt-2 at-t-xs at-dim">{{ t('art.locate_hint') }}</p>
+
+        <!-- Content -->
+        <div class="mt-5 grid grid-cols-12 gap-6">
+          <div v-if="Object.keys(selected.structured_data).length" class="col-span-12 lg:col-span-5">
+            <h4 class="at-eyebrow mb-2">{{ t('art.key_data') }}</h4>
+            <pre class="at-inset max-h-72 overflow-y-auto p-3 font-mono at-t-xs leading-relaxed at-muted">{{ prettyJson(selected.structured_data) }}</pre>
+          </div>
+
+          <div class="col-span-12 lg:col-span-7">
+            <h4 class="at-eyebrow mb-2">{{ t('art.content') }}</h4>
+            <p class="max-h-72 overflow-y-auto whitespace-pre-wrap at-t-sm leading-relaxed at-muted">{{ selected.content }}</p>
+          </div>
+        </div>
+
+        <div v-if="selected.evidence.length" class="mt-6">
+          <h4 class="at-eyebrow mb-2">{{ t('art.evidence') }}</h4>
+          <ul class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <li v-for="(ev, i) in selected.evidence" :key="ev.evidence_id || (ev.source_id + '|') + i" class="at-inset p-3 at-t-sm">
+              <p class="at-fg">
+                <span class="font-mono at-t-xs at-dim">#{{ i + 1 }}</span> {{ ev.claim }}
+              </p>
+              <p v-if="ev.evidence" class="mt-1 at-t-xs at-dim">{{ ev.evidence }}</p>
+            </li>
+          </ul>
+        </div>
+
+        <div v-if="selected.source_records.length" class="mt-6">
+          <h4 class="at-eyebrow mb-2">{{ t('art.sources') }}</h4>
+          <ul class="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+            <li v-for="source in selected.source_records" :key="source.id" class="min-w-0 at-t-sm">
+              <a
+                v-if="href(source.url)"
+                :href="href(source.url) || undefined"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="break-all at-info underline underline-offset-2"
+                :title="source.url"
+              >
+                {{ sourceLinkLabel(source) }}
+              </a>
+              <span v-else class="at-muted">{{ source.title || source.id }} <span class="at-dim">{{ t('art.offline') }}</span></span>
+              <span class="at-chip ml-2">{{ source.source_type }}</span>
+            </li>
+          </ul>
+        </div>
+
+        <p class="mt-6 at-t-xs at-dim">
+          {{ modeHint() === 'real' ? t('art.mode_real') : t('art.mode_offline') }}
         </p>
       </div>
-    </div>
+
+      <div v-else class="at-card p-5 at-t-sm at-dim">{{ t('art.select') }}</div>
+    </section>
   </div>
 </template>

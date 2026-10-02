@@ -20,7 +20,10 @@ from __future__ import annotations
 from app.llm.provider import LLMProvider
 from app.runtime.artifacts import AgentArtifact
 from app.runtime.events import ExecutionTrace
-from app.synthesis.evidence_filter import collect_evidence_records
+from app.synthesis.evidence_filter import (
+    collect_evidence_records,
+    validate_report_references,
+)
 from app.synthesis.models import ReportBundle, SynthesisResult
 from app.synthesis.synthesizer import SynthesisError, run_synthesis
 
@@ -76,7 +79,7 @@ def run_synthesis_pipeline(
 
     _record_detail_events(trace, synthesis)
 
-    return ReportBundle(
+    bundle = ReportBundle(
         task=task,
         synthesis=synthesis,
         evidence=evidence,
@@ -88,6 +91,18 @@ def run_synthesis_pipeline(
         status=status,
         degradation_reason=reason,
     )
+    # Deterministic provenance audit — never an LLM judge. Issues are recorded
+    # so the UI can say "reference missing" instead of inventing a link.
+    issues = validate_report_references(bundle)
+    bundle.reference_issues = issues
+    if trace is not None:
+        trace.record(
+            "SYNTHESIS_VALIDATED",
+            message=f"reference issues: {len(issues)}",
+            issue_count=len(issues),
+            issues=issues[:20],
+        )
+    return bundle
 
 
 def _degraded_result(task: str, artifacts, evidence) -> SynthesisResult:

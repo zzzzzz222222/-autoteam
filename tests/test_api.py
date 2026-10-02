@@ -33,7 +33,7 @@ def test_health():
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["version"] == "0.5.0"
+    assert body["version"] == "0.6.0"
 
 
 def test_create_task_returns_real_id():
@@ -99,6 +99,12 @@ def test_full_run_end_to_end():
     assert result["markdown"]
     assert result["sources"]  # provenance recorded
     assert result["evidence"]
+    # v0.6.0 synthesis payload is exposed (structured, not only inside markdown)
+    assert isinstance(result["findings"], list)
+    assert result["synthesis_status"] in {"completed", "degraded", "failed"}
+    for finding in result["findings"]:
+        assert finding["finding_id"]
+        assert finding["support_kind"] in {"multi_source", "single_source", "unsupported"}
 
 
 def test_sse_stream_emits_events():

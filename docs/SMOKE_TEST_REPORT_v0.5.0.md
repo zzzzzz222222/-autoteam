@@ -71,7 +71,7 @@
 
 - 真实 Key（DeepSeek + Tavily）仅存于本地 `.env`（**已被 `.gitignore` 忽略**），未写入任何代码 / README / 日志 / Artifact / Event / 报告 / 本报告。
 - 全仓扫描：未检出真实 API Key 片段（含 DeepSeek 与 Tavily 前缀）；测试内 `sk-*` 均为**伪造假 Key**（用于断言 Key 不被打印）。
-- 扫描绝对路径（`H:\xxcx` / `工作\项目`）：无命中。
+- 扫描绝对路径（本地工作区路径）：无命中。
 - `git status`：仅 `app/tools/registry.py`（Tavily 协议）、`app/runtime/artifacts.py`（数字压平）、`tests/test_realworld.py`（2 个新测试）改动；临时 `_smoke_*.py` **已全部删除**。
 - 未 push、未建 remote、未发 Release。
 

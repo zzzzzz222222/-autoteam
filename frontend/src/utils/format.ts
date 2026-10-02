@@ -49,3 +49,40 @@ function tryParse(raw: string): unknown | null {
     return null
   }
 }
+
+/**
+ * Return the URL only when it is a safe, clickable http(s) link.
+ * Anything else (empty, `javascript:`, relative, malformed) returns null so the
+ * UI never renders a fake or unsafe link.
+ */
+export function safeHttpUrl(url: string | undefined | null): string | null {
+  if (!url) return null
+  const trimmed = url.trim()
+  if (!/^https?:\/\//i.test(trimmed)) return null
+  try {
+    const parsed = new URL(trimmed)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
+/** Display host for a URL, or empty string when it cannot be parsed. */
+export function hostOf(url: string | undefined | null): string {
+  const safe = safeHttpUrl(url)
+  if (!safe) return ''
+  try {
+    return new URL(safe).host
+  } catch {
+    return ''
+  }
+}
+
+/** Keep the start and end of a long string visible (for URLs). */
+export function truncateMiddle(text: string, max = 72): string {
+  if (!text || text.length <= max) return text
+  const head = Math.ceil((max - 1) / 2)
+  const tail = Math.floor((max - 1) / 2)
+  return `${text.slice(0, head)}…${text.slice(-tail)}`
+}

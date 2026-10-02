@@ -21,7 +21,7 @@ const examples = [
   { labelKey: 'workspace.ex_saas', valueKey: 'workspace.ex_saas_value', icon: 'layers' as const },
 ]
 
-// static product narrative (clearly marked, not faked run state)
+// Static product narrative — clearly a description, never faked run state.
 const journey = computed(() => [
   { key: t('ws.j1'), d: t('ws.j1d') },
   { key: t('ws.j2'), d: t('ws.j2d') },
@@ -37,7 +37,7 @@ function useExample(e: (typeof examples)[number]) {
 }
 
 async function createAndRun() {
-  if (!task.value.trim()) return
+  if (!task.value.trim() || submitting.value) return
   submitting.value = true
   error.value = null
   try {
@@ -46,7 +46,7 @@ async function createAndRun() {
     store.startStream(created.task_id)
     await router.push({ name: 'execution', params: { taskId: created.task_id } })
   } catch (err) {
-    error.value = String(err)
+    error.value = `${t('common.request_failed')} — ${String(err)}`
   } finally {
     submitting.value = false
   }
@@ -54,13 +54,37 @@ async function createAndRun() {
 
 function relativeTime(timestamp: number): string {
   const seconds = Math.floor(Date.now() / 1000 - timestamp)
-  if (seconds < 60) return `${seconds}s ago`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-  return `${Math.floor(seconds / 86400)}d ago`
+  if (seconds < 60) return `${seconds} ${t('common.ago_s')}`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} ${t('common.ago_m')}`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} ${t('common.ago_h')}`
+  return `${Math.floor(seconds / 86400)} ${t('common.ago_d')}`
+}
+
+function runStatusClass(status: string): string {
+  switch (status) {
+    case 'success':
+      return 'at-success-text'
+    case 'running':
+      return 'at-info at-status-pulse'
+    case 'failed':
+      return 'at-danger-text'
+    case 'partial_success':
+      return 'at-warn-text'
+    default:
+      return 'at-dim'
+  }
 }
 
 const recentRuns = computed(() => store.tasks.slice(0, 6))
+
+const errorInfo = computed(() => {
+  if (!error.value) return null
+  const network = /failed to fetch|networkerror|load failed|network request failed/i.test(error.value)
+  return {
+    reason: network ? t('common.error_network') : t('common.request_failed'),
+    detail: error.value,
+  }
+})
 
 onMounted(() => {
   void store.fetchList()
@@ -68,127 +92,124 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1200px] px-10 py-12">
-    <!-- Hero: left aligned, large -->
-    <div class="mb-10">
-      <p class="tok-eyebrow mb-3">{{ t('workspace.eyebrow') }}</p>
-      <h1 class="tok-hero">{{ t('workspace.hero') }}</h1>
-      <p class="mt-4 max-w-2xl text-[18px] leading-relaxed text-zinc-500">{{ t('workspace.subtitle') }}</p>
+  <div class="mx-auto w-full max-w-[1180px] px-6 py-10 md:px-10 md:py-14">
+    <!-- Hero -->
+    <div class="at-fade-in mb-10">
+      <p class="at-eyebrow mb-3">{{ t('workspace.eyebrow') }}</p>
+      <h1 class="at-h1 max-w-3xl">{{ t('workspace.hero') }}</h1>
+      <p class="mt-4 max-w-2xl at-t-lg leading-relaxed at-muted md:at-t-lg">
+        {{ t('workspace.subtitle') }}
+      </p>
     </div>
 
-    <!-- Task composer: the visual core, wide and prominent -->
-    <div
-      class="at-card overflow-hidden shadow-sm focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/10"
-      style="max-width: 940px"
-    >
-      <textarea
-        v-model="task"
-        rows="6"
-        class="w-full resize-none bg-transparent px-6 py-5 text-[17px] leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400"
-        :placeholder="t('workspace.input_placeholder')"
-      ></textarea>
-      <div class="flex items-center justify-between border-t border-zinc-100 bg-zinc-50/60 px-5 py-3">
-        <div class="flex items-center gap-5 text-[14px]">
-          <label class="flex cursor-pointer items-center gap-2 text-zinc-600">
-            <input v-model="mode" type="radio" value="real" class="accent-blue-600 h-4 w-4" />
-            Real
-          </label>
-          <label class="flex cursor-pointer items-center gap-2 text-zinc-600">
-            <input v-model="mode" type="radio" value="offline" class="accent-blue-600 h-4 w-4" />
-            Offline
-          </label>
-        </div>
-        <button
-          type="button"
-          :disabled="submitting || !task.trim()"
-          class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-          @click="createAndRun"
-        >
+    <!-- Composer -->
+    <form class="at-panel overflow-hidden md:max-w-[920px]" @submit.prevent="createAndRun">
+      <div class="p-4 md:p-5">
+        <label for="task-input" class="at-eyebrow mb-2 block">{{ t('workspace.input_label') }}</label>
+        <textarea
+          id="task-input"
+          v-model="task"
+          rows="5"
+          class="at-textarea resize-none at-t-lg"
+          :placeholder="t('workspace.input_placeholder')"
+          :aria-describedby="error ? 'task-error' : undefined"
+        ></textarea>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 border-t at-border px-4 py-3 md:px-5">
+        <fieldset class="flex items-center gap-3">
+          <legend class="sr-only">{{ t('workspace.mode_label') }}</legend>
+          <div class="at-seg">
+            <label>
+              <input v-model="mode" type="radio" value="offline" name="run-mode" />
+              {{ t('workspace.mode_offline') }}
+            </label>
+            <label>
+              <input v-model="mode" type="radio" value="real" name="run-mode" />
+              {{ t('workspace.mode_real') }}
+            </label>
+          </div>
+        </fieldset>
+
+        <button type="submit" class="at-btn at-btn-primary" :disabled="submitting || !task.trim()">
+          <UnitIcon v-if="submitting" name="loader" :size="15" class="at-spin" />
+          <UnitIcon v-else name="play" :size="15" />
           {{ submitting ? t('workspace.starting') : t('workspace.run') }}
-          <UnitIcon name="arrowRight" :size="16" />
         </button>
       </div>
+    </form>
+
+    <div v-if="errorInfo" id="task-error" role="alert" class="mt-3 at-t-base at-danger-text">
+      <p class="flex items-center gap-2">
+        <UnitIcon name="alertTriangle" :size="15" />
+        {{ errorInfo.reason }}
+      </p>
+      <p class="mt-1 block font-mono at-t-xs at-dim">{{ errorInfo.detail }}</p>
+      <p class="mt-1 block at-t-xs at-muted">{{ t('common.error_hint') }}</p>
     </div>
+    <p v-else-if="submitting" class="mt-3 flex items-center gap-2 at-t-base at-muted">
+      <UnitIcon name="loader" :size="15" class="at-spin" />
+      {{ t('workspace.forming') }}
+    </p>
 
-    <p v-if="error" class="mt-4 text-[15px] text-red-600">{{ error }}</p>
-    <p v-else-if="submitting" class="mt-4 text-[15px] text-zinc-400">{{ t('workspace.forming') }}</p>
-
-    <!-- Example tasks: pill cards -->
-    <div class="mt-12" style="max-width: 940px">
-      <p class="tok-eyebrow mb-4">{{ t('workspace.examples') }}</p>
+    <!-- Examples -->
+    <section class="mt-12 md:max-w-[920px]" :aria-label="t('workspace.examples')">
+      <h2 class="at-eyebrow mb-4">{{ t('workspace.examples') }}</h2>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <button
           v-for="example in examples"
           :key="example.labelKey"
           type="button"
-          class="at-card group flex items-center gap-3 px-4 py-4 text-left transition-colors hover:border-zinc-400 hover:bg-white"
+          class="at-card group flex items-center gap-3 px-4 py-4 text-left transition-colors hover:border-[var(--at-border-strong)]"
           @click="useExample(example)"
         >
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 transition-colors group-hover:bg-blue-50 group-hover:text-blue-600">
-            <UnitIcon :name="example.icon" :size="17" />
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md at-inset at-dim transition-colors group-hover:text-[var(--at-info)]">
+            <UnitIcon :name="example.icon" :size="16" />
           </span>
-          <span class="text-[15px] font-medium text-zinc-800">{{ t(example.labelKey) }}</span>
+          <span class="at-t-base font-medium at-fg">{{ t(example.labelKey) }}</span>
         </button>
       </div>
-    </div>
+    </section>
 
-    <!-- How AutoTeam Works: visual product narrative (static, clearly labeled) -->
-    <div class="mt-16" style="max-width: 940px">
-      <p class="tok-eyebrow mb-6">{{ t('ws.title') }}</p>
-      <div class="grid grid-cols-1 gap-0 sm:grid-cols-4 lg:grid-cols-8">
-        <template v-for="(step, i) in journey" :key="step.key">
-          <div class="flex flex-col items-start pr-6">
-            <span class="font-mono text-[12px] font-medium text-blue-600">0{{ i + 1 }}</span>
-            <p class="mt-1.5 text-[15px] font-semibold text-zinc-900">{{ step.key }}</p>
-            <p class="mt-0.5 text-[13px] leading-relaxed text-zinc-400">{{ step.d }}</p>
-          </div>
-          <div v-if="i < journey.length - 1" class="hidden py-8 pr-6 lg:block">
-            <UnitIcon name="arrowRight" :size="18" class="text-zinc-300" />
-          </div>
-        </template>
-      </div>
-    </div>
+    <!-- How it works -->
+    <section class="mt-16 md:max-w-[920px]" :aria-label="t('ws.title')">
+      <h2 class="at-eyebrow mb-6">{{ t('ws.title') }}</h2>
+      <ol class="grid grid-cols-2 gap-x-6 gap-y-7 sm:grid-cols-4 lg:grid-cols-7">
+        <li v-for="(step, i) in journey" :key="step.key" class="flex flex-col">
+          <span class="at-mono at-t-xs font-semibold at-dim">{{ String(i + 1).padStart(2, '0') }}</span>
+          <p class="mt-1.5 at-t-base font-semibold at-fg">{{ step.key }}</p>
+          <p class="mt-0.5 at-t-xs leading-relaxed at-dim">{{ step.d }}</p>
+        </li>
+      </ol>
+    </section>
 
-    <!-- Recent runs: work history with visual weight -->
-    <div v-if="recentRuns.length" class="mt-16" style="max-width: 940px">
-      <p class="tok-eyebrow mb-4">{{ t('workspace.recent') }}</p>
-      <ul class="divide-y divide-zinc-200 border-t border-zinc-200">
+    <!-- Recent runs -->
+    <section v-if="recentRuns.length" class="mt-16 md:max-w-[920px]" :aria-label="t('workspace.recent')">
+      <h2 class="at-eyebrow mb-4">{{ t('workspace.recent') }}</h2>
+      <ul class="at-divide at-card overflow-hidden">
         <li v-for="run in recentRuns" :key="run.task_id">
           <RouterLink
             :to="{ name: 'execution', params: { taskId: run.task_id } }"
-            class="group flex items-center justify-between gap-6 py-4"
+            class="group flex items-center justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-[var(--at-surface-2)]"
           >
-            <div class="flex min-w-0 items-center gap-4">
-              <span
-                class="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
-                :class="{
-                  'bg-emerald-500': run.status === 'success',
-                  'bg-blue-500': run.status === 'running',
-                  'bg-red-500': run.status === 'failed',
-                  'bg-amber-500': run.status === 'partial_success',
-                  'bg-zinc-300': !['success', 'running', 'failed', 'partial_success'].includes(run.status),
-                }"
-              />
+            <div class="flex min-w-0 items-center gap-3">
+              <span class="at-dot shrink-0" :class="runStatusClass(run.status)" aria-hidden="true" />
               <div class="min-w-0">
-                <p class="truncate text-[15px] font-medium text-zinc-800 group-hover:text-blue-700" :title="run.task">
-                  {{ run.task }}
-                </p>
-                <p class="mt-0.5 text-[13px] text-zinc-400">
-                  {{ Object.keys(run.agent_names || {}).length }} agents
-                  · {{ (run.layers || []).length }} layers
-                  · {{ (run.final_artifact?.sources || []).length }} sources
+                <p class="truncate at-t-base font-medium at-fg" :title="run.task">{{ run.task }}</p>
+                <p class="mt-0.5 font-mono at-t-xs at-dim">
+                  {{ Object.keys(run.agent_names || {}).length }} {{ t('common.agents') }} ·
+                  {{ (run.layers || []).length }} {{ t('common.layers') }} ·
+                  {{ (run.final_artifact?.sources || []).length }} {{ t('common.sources') }}
                 </p>
               </div>
             </div>
-            <div class="flex shrink-0 items-center gap-5 text-[13px] text-zinc-400">
-              <span class="rounded-full border border-zinc-200 px-2.5 py-0.5 text-[12px] font-medium">
-                {{ run.mode }}
-              </span>
-              <span class="font-mono">{{ relativeTime(run.created_at) }}</span>
+            <div class="flex shrink-0 items-center gap-3 font-mono at-t-xs at-dim">
+              <span class="at-chip">{{ t(run.mode === 'real' ? 'mode.real' : 'mode.offline') }}</span>
+              <span class="at-num">{{ relativeTime(run.created_at) }}</span>
             </div>
           </RouterLink>
         </li>
       </ul>
-    </div>
+    </section>
   </div>
 </template>

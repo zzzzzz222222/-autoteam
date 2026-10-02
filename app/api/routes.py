@@ -26,7 +26,7 @@ from app.api.runs import RunRegistry
 router = APIRouter(prefix="/api", tags=["autoteam"])
 registry = RunRegistry()
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 
 def _serialize_event(event: dict[str, Any]) -> str:
@@ -152,12 +152,15 @@ def get_result(task_id: str) -> FinalResultResponse:
         sources=final["sources"],
         evidence=final["evidence"],
         sections=final["sections"],
+        findings=final.get("findings") or [],
         insights=final.get("insights") or [],
         contradictions=final.get("contradictions") or [],
         uncertainties=final.get("uncertainties") or [],
         tradeoffs=final.get("tradeoffs") or [],
         recommendations=final.get("recommendations") or [],
         synthesis_status=final.get("synthesis_status") or "",
+        synthesis_degradation_reason=final.get("synthesis_degradation_reason") or "",
+        reference_issues=final.get("reference_issues") or [],
     )
 
 

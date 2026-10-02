@@ -48,6 +48,9 @@ class ToolResult(BaseModel):
     tool: str = ""
     results: list[str] = Field(default_factory=list)
     offline: bool = True
+    # v0.6.0 honest execution nature (kept separate from ``offline`` which is
+    # backward compatible): web | local | offline_mock | offline_fallback
+    kind: str = "offline_mock"
     value: float | None = None  # calculator
     search_results: list[SearchResult] = Field(default_factory=list)
     error: str | None = None
@@ -85,10 +88,11 @@ def calculator(query: str) -> ToolResult:
     """``query`` is the arithmetic expression (e.g. ``(100 - 20) / 4``)."""
     outcome = safe_calculate(query)
     if outcome.error:
-        return ToolResult(query=query, offline=True, error=outcome.error)
+        return ToolResult(query=query, offline=True, kind="local", error=outcome.error)
     return ToolResult(
         query=query,
         offline=True,
+        kind="local",
         value=outcome.value,
         results=[f"[calculator] {outcome.expression} = {outcome.value}"],
     )
@@ -201,6 +205,7 @@ def web_search(query: str) -> ToolResult:
             return ToolResult(
                 query=query,
                 offline=False,
+                kind="web",
                 results=[item.snippet for item in search_results],
                 search_results=search_results,
             )
@@ -209,6 +214,7 @@ def web_search(query: str) -> ToolResult:
             return ToolResult(
                 query=query,
                 offline=True,
+                kind="offline_fallback",
                 results=[item.snippet for item in fallback],
                 search_results=fallback,
                 error=f"web search failed: {type(exc).__name__}",
@@ -217,6 +223,7 @@ def web_search(query: str) -> ToolResult:
     return ToolResult(
         query=query,
         offline=True,
+        kind="offline_mock",
         results=[item.snippet for item in offline],
         search_results=offline,
     )
@@ -225,11 +232,11 @@ def web_search(query: str) -> ToolResult:
 def local_knowledge(query: str) -> ToolResult:
     outcome = search_knowledge(query)
     if outcome.error and not outcome.matches:
-        return ToolResult(query=query, offline=True, results=[], error=outcome.error)
+        return ToolResult(query=query, offline=True, kind="local", results=[], error=outcome.error)
     results = [f"[knowledge:{match['file']}] {match['snippet']}" for match in outcome.matches]
     if not results:
         results = [f"[knowledge] no files matched '{query}' (offline workspace)"]
-    return ToolResult(query=query, offline=True, results=results)
+    return ToolResult(query=query, offline=True, kind="local", results=results)
 
 
 # Required argument names per tool — used by ToolRegistry.execute validation.

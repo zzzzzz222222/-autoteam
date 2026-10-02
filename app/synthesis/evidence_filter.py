@@ -21,7 +21,7 @@ import json
 import re
 
 from app.runtime.artifacts import AgentArtifact
-from app.synthesis.models import EvidenceRecord, SourceRecord
+from app.synthesis.models import EvidenceRecord, ReportBundle, SourceRecord
 
 _URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 
@@ -124,6 +124,7 @@ def collect_evidence_records(artifacts: list[AgentArtifact]) -> tuple[
                 producer_agent=item.producer_agent or producer,
                 artifact_id=item.artifact_id or artifact_id,
                 relevance=_relevance_hint(artifact, item.claim),
+                claim_type=getattr(item, "claim_type", "") or "",
                 verified=bool(source_id),
             )
             evidence_index[record.evidence_id] = record
@@ -175,3 +176,66 @@ def validate_evidence_references(
         elif item:
             invalid.append(item)
     return valid, invalid
+
+
+def validate_report_references(bundle: ReportBundle) -> list[str]:
+    """Deterministic cross-reference audit of a finished ``ReportBundle``.
+
+    Pure code — no LLM judge, no scoring. Returns human-readable issues for
+    dangling references so the caller can surface "reference missing" instead of
+    fabricating a link. An empty list means every link in the report resolves.
+    """
+    issues: list[str] = []
+    evidence_ids = [item.evidence_id for item in bundle.evidence]
+    duplicates = sorted({eid for eid in evidence_ids if evidence_ids.count(eid) > 1})
+    for eid in duplicates:
+        issues.append(f"duplicate evidence id: {eid}")
+
+    seen_ids = set(evidence_ids)
+    source_ids = {item.source_id for item in bundle.sources}
+    for item in bundle.evidence:
+        if item.source_id and item.source_id not in source_ids:
+            issues.append(f"evidence {item.evidence_id} references missing source {item.source_id}")
+
+    synthesis = bundle.synthesis
+    insight_ids = {item.insight_id for item in synthesis.cross_agent_insights}
+    tradeoff_ids = {item.tradeoff_id for item in synthesis.tradeoffs}
+
+    findings = (
+        synthesis.key_findings
+        + synthesis.supported_findings
+        + synthesis.single_source_findings
+    )
+    # (item kind, item id, referenced ids, valid set, referenced kind)
+    checks: list[tuple[str, str, list[str], set[str], str]] = []
+    checks += [
+        ("finding", item.finding_id or "?", item.evidence_ids, seen_ids, "evidence")
+        for item in findings
+    ]
+    checks += [
+        ("insight", item.insight_id, item.supporting_evidence_ids, seen_ids, "evidence")
+        for item in synthesis.cross_agent_insights
+    ]
+    checks += [
+        ("contradiction", item.contradiction_id, item.evidence_ids, seen_ids, "evidence")
+        for item in synthesis.contradictions
+    ]
+    checks += [
+        ("trade-off", item.tradeoff_id, item.evidence_ids, seen_ids, "evidence")
+        for item in synthesis.tradeoffs
+    ]
+    for item in synthesis.recommendations:
+        rec = item.recommendation_id
+        checks += [
+            ("recommendation", rec, item.supporting_evidence_ids, seen_ids, "evidence"),
+            ("recommendation", rec, item.supporting_insight_ids, insight_ids, "insight"),
+            ("recommendation", rec, item.supporting_tradeoff_ids, tradeoff_ids, "trade-off"),
+        ]
+    for kind, item_id, refs, valid, ref_kind in checks:
+        for ref in refs:
+            if ref not in valid:
+                issues.append(f"{kind} {item_id} → missing {ref_kind} {ref}")
+    for item in synthesis.cross_agent_insights:
+        if not item.supporting_evidence_ids:
+            issues.append(f"insight {item.insight_id} has no supporting evidence")
+    return issues

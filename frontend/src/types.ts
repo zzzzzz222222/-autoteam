@@ -41,16 +41,31 @@ export interface EvidenceDto {
   evidence_id?: string
   producer_agent?: string
   artifact_id?: string
+  claim_type?: string
 }
 
 // v0.6.0 synthesis payload (all optional)
+export interface FindingDto {
+  finding_id: string
+  statement: string
+  evidence_ids: string[]
+  supporting_agents: string[]
+  support_kind: string
+  notes?: string
+  claim_type?: string
+  derivation?: string
+}
+
 export interface InsightDto {
   insight_id: string
   statement: string
   supporting_evidence_ids: string[]
   supporting_artifact_ids: string[]
   producer_agents: string[]
+  contributing_agents?: string[]
   uncertainty: string
+  claim_type?: string
+  derivation?: string
 }
 
 export interface ContradictionDto {
@@ -93,6 +108,7 @@ export interface RecommendationDto {
   supporting_evidence_ids: string[]
   limitations: string[]
   status: string
+  claim_type?: string
 }
 
 export interface SectionDto {
@@ -174,7 +190,12 @@ export interface ExecutionEvent {
   type: string
   agent_id: string
   message: string
-  metadata: Record<string, unknown> & { tool?: string; offline?: boolean; artifact_id?: string }
+  metadata: Record<string, unknown> & {
+    tool?: string
+    tool_kind?: string
+    offline?: boolean
+    artifact_id?: string
+  }
 }
 
 export interface EventsHistory {
@@ -192,12 +213,15 @@ export interface FinalResultResponse {
   sources: SourceDto[]
   evidence: EvidenceDto[]
   sections: SectionDto[]
+  findings?: FindingDto[]
   insights?: InsightDto[]
   contradictions?: ContradictionDto[]
   uncertainties?: UncertaintyDto[]
   tradeoffs?: TradeoffDto[]
   recommendations?: RecommendationDto[]
   synthesis_status?: string
+  synthesis_degradation_reason?: string
+  reference_issues?: string[]
 }
 
 export type AgentStatus =
@@ -208,3 +232,10 @@ export type AgentStatus =
   | 'failed'
   | 'retry'
   | 'skipped'
+// M1: a ready-to-draw DAG edge (geometry computed by the parent from the DOM).
+export interface GraphEdgeShape {
+  id: string
+  d: string
+  active: boolean
+  dim: boolean
+}

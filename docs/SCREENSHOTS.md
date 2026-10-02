@@ -1,32 +1,72 @@
-# AutoTeam — Screenshots Guide
+# AutoTeam — UI & Screenshots Guide
 
-This page documents the Streamlit views worth capturing for the GitHub README and where to take them. Screenshots are intentionally **not** pre-generated here so the images always reflect the current UI.
+This page documents the current product UI (Vue) and the legacy Streamlit demos,
+and suggests what to capture for the README / a GitHub Release. Screenshots are
+intentionally **not** pre-generated here so the images always reflect the current UI.
 
-## How to run the UI
+## Current product UI (Vue 3 + FastAPI)
 
 ```bash
-pip install -e ".[ui]"
-streamlit run app/ui.py
+# 1. build the frontend once
+cd frontend && npm install && npm run build && cd ..
+
+# 2. run the backend (serves the built SPA too)
+uvicorn app.api.main:app --port 8000
 ```
 
-The UI runs fully offline. A browser tab opens at `http://localhost:8501`.
+Open <http://localhost:8000>. Enter a task and choose **Offline** or **Real LLM**,
+then **Build Team & Run**. For live development use `npm run dev` (Vite on
+:5173, proxying `/api` to :8000).
+
+| Page | What it shows |
+|---|---|
+| **Workspace** | task input, execution mode, example tasks, recent runs |
+| **Execution** | SSE-driven live timeline; per-agent status, tool calls (with honest `web` / `local` / `offline mock` / `offline fallback` chips), evidence/sources counters |
+| **Team** | the dynamic DAG actually built for the task (roles, layers, edges) |
+| **Artifacts** | one card per real artifact, dependency flow, evidence/sources |
+| **Result** | the assembled deliverable: Executive Summary, Key Findings, Cross-Agent Insights, Contradictions & Uncertainties, Trade-offs, Recommendations, original agent sections, Evidence and Sources |
 
 ## Recommended screenshots
 
 | File | View | How to capture |
 |---|---|---|
-| `01-overview.png` | `app/ui.py` homepage — task input + overall pipeline | Run `app/ui.py`, screen-capture the landing view |
-| `02-dynamic-team.png` | Dynamic team formation (`app/ui_dynamic.py`) | `streamlit run app/ui_dynamic.py`, capture the team/topology panel |
-| `03-execution.png` | Live execution + timeline (`app/ui_live.py`) | `streamlit run app/ui_live.py`, capture the timeline / run info |
-| `04-artifacts.png` | Artifact collaboration + evidence | From the Live View, pluck an agent artifact card showing `Sources` / `Evidence` |
-| `05-final-deliverable.png` | Final Markdown deliverable | From the Live View, the "Final Markdown" section (with `## Sources` / `## Evidence`) |
+| `01-workspace.png` | Workspace — task + mode + examples | open `/`, capture the hero + input |
+| `02-execution.png` | Running team timeline | run a task, capture the Execution page mid/after run (tool chips visible) |
+| `03-team.png` | Dynamic team / DAG | open the Team tab |
+| `04-artifacts.png` | Artifact collaboration + evidence/sources | open the Artifacts tab, select a card |
+| `05-result.png` | Result reader with structured synthesis blocks | open the Result tab |
+| `06-provenance.png` | Recommendation trace chain (`Recommendation → Insight → Evidence → Source`) | expand **Traceability** on a recommendation in the Result page |
+
+## Real vs Offline in screenshots
+
+- **Offline** runs show `offline_mock` sources with **no URL** — this is expected
+  and must not be presented as real data.
+- **Real** runs may still contain `offline mock` and `local` tools alongside
+  `web`; that is the accurate per-tool status, not a bug.
+- If a screenshot includes a real URL, make sure it comes from a real run with a
+  configured search adapter.
 
 ## Alternative: a static offline artifact
 
-If screenshots are inconvenient, a verified offline run already produces a human-readable deliverable:
+A verified offline run already produces a human-readable deliverable:
 
 ```bash
 python examples/real_world_demo.py
 ```
 
-The final report is written to `autoteam_output/<run_id>.md`. Its **Evidence** and **Sources** sections mirror what the UI shows, and can be linked as a demonstrable output without any screenshot tool.
+The report is written to `autoteam_output/<run_id>.md`; its **Key Findings**,
+**Insights**, **Trade-offs**, **Recommendations**, **Evidence** and **Sources**
+sections mirror what the Result page shows, and can be linked as a demonstrable
+output without any screenshot tool.
+
+## Legacy Streamlit demos (historical)
+
+The three Streamlit pages are kept as legacy demos and remain covered by tests
+— they are no longer the product entry point:
+
+```bash
+pip install -e ".[ui]"
+streamlit run app/ui.py          # v0.1–0.3 demo
+streamlit run app/ui_dynamic.py  # dynamic team formation
+streamlit run app/ui_live.py     # v0.4 live view
+```

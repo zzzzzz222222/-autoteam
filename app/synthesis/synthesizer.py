@@ -90,13 +90,14 @@ def build_synthesis_prompt(
 Return JSON matching SynthesisResult with:
 - summary: 3-5 sentence executive summary of the COMBINED result
 - key_findings: what multiple agents together establish (findings[] with
-  finding_id, statement, evidence_ids, supporting_agents, support_kind)
+  finding_id, statement, evidence_ids, supporting_agents, support_kind,
+  claim_type, derivation)
 - supported_findings: findings backed by 2+ evidence items / agents
 - single_source_findings: findings backed by exactly one source
-- cross_agent_insights: judgments that COMBINE at least two evidence items
-  into a new conclusion (insights[] with insight_id, statement,
+- cross_agent_insights: judgments that COMBINE at least two DIFFERENT agents'
+  evidence into a new conclusion (insights[] with insight_id, statement,
   supporting_evidence_ids, supporting_artifact_ids, producer_agents,
-  uncertainty)
+  uncertainty, claim_type, derivation)
 - contradictions: claims that conflict (contradictions[] with
   contradiction_id, claim_a, claim_b, evidence_ids, source_ids, agents,
   status='resolved'|'unresolved', resolution)
@@ -116,33 +117,82 @@ Rules:
 3. Recommendations with no supporting evidence must use status='unsupported'.
 4. No quality scores, no self-grading, no percentages of confidence.
 5. Write statements in the same language as the TASK.
+6. claim_type classifies the DATA NATURE of a claim. Use exactly one of:
+   source_fact (a source states it directly), derived_estimate (computed from
+   traceable inputs — put the inputs and method in derivation),
+   planning_assumption (a product/business goal or forecast),
+   unverified_claim (thin or unverifiable support). If you are unsure, leave
+   claim_type empty — never guess. Never call a planning target a market fact.
+7. A cross_agent_insight must combine at least two different agents' evidence.
+   If only one agent supports it, keep it out of cross_agent_insights (or flag
+   it in uncertainty) — do not dress a single-agent point as cross-agent.
 """
     )
 
 
-def _sanitize_finding(item: Finding, known: set[str]) -> Finding | None:
+def _sanitize_finding(
+    item: Finding, known: set[str], by_id: dict[str, EvidenceRecord]
+) -> Finding | None:
     valid, invalid = validate_evidence_references(item.evidence_ids, known)
     if invalid and not valid:
         return None
     if invalid:
         item.notes = (item.notes + f" dropped_invalid_refs={invalid}").strip()
     item.evidence_ids = valid
+    item.support_kind, agents = _derive_support(item.evidence_ids, by_id)
+    if agents:
+        item.supporting_agents = agents
     return item
 
 
-def _sanitize_insight(item: Insight, known: set[str]) -> Insight | None:
+def _derive_support(
+    evidence_ids: list[str], by_id: dict[str, EvidenceRecord]
+) -> tuple[str, list[str]]:
+    """Deterministically classify support from the *cited* evidence.
+
+    Multi-source requires at least two distinct producer agents **or** two
+    distinct sources — never just a raw evidence count.
+    """
+    if not evidence_ids:
+        return "unsupported", []
+    agents: set[str] = set()
+    sources: set[str] = set()
+    for ref in evidence_ids:
+        record = by_id.get(ref)
+        if record is None:
+            continue
+        if record.producer_agent:
+            agents.add(record.producer_agent)
+        if record.source_id:
+            sources.add(record.source_id)
+    kind = "multi_source" if (len(agents) >= 2 or len(sources) >= 2) else "single_source"
+    return kind, sorted(agents)
+
+
+def _sanitize_insight(
+    item: Insight, known: set[str], by_id: dict[str, EvidenceRecord]
+) -> Insight | None:
     valid, _ = validate_evidence_references(item.supporting_evidence_ids, known)
     if not valid:
         return None
     item.supporting_evidence_ids = valid
+    _, agents = _derive_support(valid, by_id)
+    item.contributing_agents = agents
+    if len(agents) < 2 and not item.uncertainty:
+        item.uncertainty = "single agent — not a cross-agent conclusion"
     return item
 
 
-def _sanitize_contradiction(item: Contradiction, known: set[str]) -> Contradiction | None:
+def _sanitize_contradiction(
+    item: Contradiction, known: set[str], by_id: dict[str, EvidenceRecord]
+) -> Contradiction | None:
     valid, _ = validate_evidence_references(item.evidence_ids, known)
     if not valid:
         return None
     item.evidence_ids = valid
+    _, agents = _derive_support(valid, by_id)
+    if agents:
+        item.agents = agents  # deterministic producer attribution, never invented
     return item
 
 
@@ -184,31 +234,32 @@ def validate_synthesis(
     IDs the LLM omitted are assigned here — never invented as citations.
     """
     known = {item.evidence_id for item in evidence}
+    by_id = {item.evidence_id: item for item in evidence}
     cleaned = SynthesisResult(summary=result.summary, notes=result.notes)
 
     for index, item in enumerate(result.key_findings, start=1):
         item.finding_id = _ensure_id("find", index, item.finding_id)
-        kept = _sanitize_finding(item, known)
+        kept = _sanitize_finding(item, known, by_id)
         if kept is not None:
             cleaned.key_findings.append(kept)
     for index, item in enumerate(result.supported_findings, start=1):
         item.finding_id = _ensure_id("sfind", index, item.finding_id)
-        kept = _sanitize_finding(item, known)
+        kept = _sanitize_finding(item, known, by_id)
         if kept is not None:
             cleaned.supported_findings.append(kept)
     for index, item in enumerate(result.single_source_findings, start=1):
         item.finding_id = _ensure_id("ufind", index, item.finding_id)
-        kept = _sanitize_finding(item, known)
+        kept = _sanitize_finding(item, known, by_id)
         if kept is not None:
             cleaned.single_source_findings.append(kept)
     for index, item in enumerate(result.cross_agent_insights, start=1):
         item.insight_id = _ensure_id("ins", index, item.insight_id)
-        kept = _sanitize_insight(item, known)
+        kept = _sanitize_insight(item, known, by_id)
         if kept is not None:
             cleaned.cross_agent_insights.append(kept)
     for index, item in enumerate(result.contradictions, start=1):
         item.contradiction_id = _ensure_id("con", index, item.contradiction_id)
-        kept = _sanitize_contradiction(item, known)
+        kept = _sanitize_contradiction(item, known, by_id)
         if kept is not None:
             cleaned.contradictions.append(kept)
     for index, item in enumerate(result.uncertainties, start=1):

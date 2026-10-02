@@ -427,6 +427,45 @@ def test_tool_calling_invalid_arguments_become_structured_errors():
         registry.execute("calculator", {"not_expression": "1"})
 
 
+def test_finish_without_deliverable_fails_instead_of_faking_success(monkeypatch):
+    """A model that finishes with no deliverable and no tool output must FAIL,
+    not be recorded as a successful empty artifact."""
+    monkeypatch.delenv("AUTOTEAM_WEB_SEARCH_URL", raising=False)
+    monkeypatch.delenv("AUTOTEAM_WEB_SEARCH_API_KEY", raising=False)
+    provider = ScriptedProvider([_decision("finish")])  # no deliverable
+    runtime = AgentRuntime(provider=provider, tool_registry=ToolRegistry(mode="auto"))
+    from app.runtime.context import AgentExecutionContext
+
+    context = AgentExecutionContext(
+        agent_id="a", role_name="A", task="t", expected_output="market_overview"
+    )
+    with pytest.raises(ProviderError):
+        runtime._real_execution(_fake_agent("A"), context, _fake_task("t"))
+
+
+def test_finish_without_deliverable_but_with_tools_is_partial(monkeypatch):
+    """If tools did produce material, degrade to an explicitly partial artifact."""
+    monkeypatch.delenv("AUTOTEAM_WEB_SEARCH_URL", raising=False)
+    monkeypatch.delenv("AUTOTEAM_WEB_SEARCH_API_KEY", raising=False)
+    provider = ScriptedProvider(
+        [
+            _decision("call_tool", "web_search", {"query": "q"}),
+            _decision("finish"),
+        ]
+    )
+    runtime = AgentRuntime(provider=provider, tool_registry=ToolRegistry(mode="auto"))
+    from app.runtime.context import AgentExecutionContext
+
+    context = AgentExecutionContext(
+        agent_id="a", role_name="A", task="t", expected_output="market_overview"
+    )
+    deliverable, _sources, _evidence, used = runtime._real_execution(
+        _fake_agent("A"), context, _fake_task("t")
+    )
+    assert used == ["web_search"]
+    assert "partial" in deliverable.summary.lower()
+
+
 # ---------------------------------------------------------------------------
 # Evidence / Source models and validation
 # ---------------------------------------------------------------------------
@@ -649,3 +688,104 @@ def test_real_world_demo_runs_offline():
 def test_session_accepts_timeout_and_tool_limits():
     session = execute_task(TASK_SOFTWARE, timeout=30, max_tool_calls=2, max_iterations=3)
     assert session.status is SessionStatus.SUCCESS
+
+
+
+# ---------------------------------------------------------------------------
+# v0.6.0 tool transparency + offline determinism
+# ---------------------------------------------------------------------------
+
+
+def test_tool_kind_distinguishes_local_mock_web_and_fallback(monkeypatch):
+    registry = ToolRegistry(mode="auto")
+
+    # deterministic local tools are NOT mocks
+    assert registry.execute("calculator", {"expression": "1 + 1"}).kind == "local"
+
+    # offline web search is an explicit offline_mock (no fake URLs)
+    for name in ("AUTOTEAM_WEB_SEARCH_URL", "AUTOTEAM_WEB_SEARCH_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    assert registry.run("web_search", "q").kind == "offline_mock"
+
+    # a failed real search is recorded as offline_fallback, never as "web"
+    monkeypatch.setenv("AUTOTEAM_WEB_SEARCH_URL", "https://search.example.com/api")
+    monkeypatch.setenv("AUTOTEAM_WEB_SEARCH_API_KEY", "sk-test-key")
+
+    def failing_urlopen(request, timeout):
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr("urllib.request.urlopen", failing_urlopen)
+    fallback = registry.run("web_search", "q")
+    assert fallback.kind == "offline_fallback"
+    assert fallback.error
+
+    # a successful real call is the only thing marked "web"
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"results": [{"title": "t", "url": "https://x.test/a", "snippet": "s"}]}'
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda request, timeout: FakeResponse())
+    real = registry.run("web_search", "q")
+    assert real.kind == "web"
+    assert real.offline is False
+
+
+def test_offline_session_never_calls_real_web_search(monkeypatch):
+    """Offline mode must stay offline even when real search keys exist in .env."""
+    monkeypatch.setenv("AUTOTEAM_WEB_SEARCH_URL", "https://search.example.com/api")
+    monkeypatch.setenv("AUTOTEAM_WEB_SEARCH_API_KEY", "sk-should-not-be-used")
+
+    called = {"n": 0}
+
+    def spy_urlopen(request, timeout):  # pragma: no cover - must never run
+        called["n"] += 1
+        raise AssertionError("offline session attempted a live web search")
+
+    monkeypatch.setattr("urllib.request.urlopen", spy_urlopen)
+    session = execute_task("分析 AI Agent 市场")
+    assert called["n"] == 0
+    for source in session.final_artifact.source_records:
+        assert source.source_type == "offline_mock"
+
+
+def test_tool_events_carry_accurate_kind(monkeypatch):
+    for name in ("AUTOTEAM_WEB_SEARCH_URL", "AUTOTEAM_WEB_SEARCH_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    session = execute_task("设计一个 FastAPI 电商后端系统", max_tool_calls=4)
+    tool_events = [e for e in session.trace.events if e.type == "TOOL_CALLED"]
+    assert tool_events
+    for event in tool_events:
+        assert event.metadata.get("tool_kind") in {
+            "web",
+            "local",
+            "offline_mock",
+            "offline_fallback",
+        }
+
+
+def test_schema_validation_error_is_friendly_not_a_traceback():
+    from pydantic import ValidationError
+
+    class BadSchemaProvider:
+        """Team formation works (mock fallback); agent decisions fail schema."""
+
+        def structured_completion(self, prompt, response_model):
+            if response_model.__name__ == "AgentDecision":
+                raise ValidationError.from_exception_data(
+                    "AgentDecision", [{"type": "missing", "loc": ("action",), "input": {}}]
+                )
+            return MockLLMProvider().structured_completion(prompt, response_model)
+
+    session = execute_task(TASK_SOFTWARE, provider=BadSchemaProvider())
+    assert session.status is not SessionStatus.SUCCESS
+    # user-facing message stays short; the run does not crash / leak a traceback
+    messages = [event.message for event in session.trace.events if event.type == "AGENT_FAILED"]
+    assert messages
+    assert all("Traceback" not in m for m in messages)
+    assert any("invalid structured response" in m for m in messages)

@@ -14,6 +14,21 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
 
+# Allowed data-nature tags (v0.6.0). Empty string means "unclassified" — the
+# system never guesses: an unknown or missing tag is simply left unset.
+CLAIM_TYPES = (
+    "source_fact",          # a source states it directly (not an audit)
+    "derived_estimate",     # computed/derived from traceable inputs
+    "planning_assumption",  # product/business goal or forecast
+    "unverified_claim",     # thin or unverifiable support
+)
+
+
+def normalize_claim_type(value: object) -> str:
+    """Coerce to an allowed claim type, or ``""`` when it cannot be trusted."""
+    text = "" if value is None else str(value).strip().lower()
+    return text if text in CLAIM_TYPES else ""
+
 
 def _as_str_list(value: object) -> list[str]:
     """Coerce scalar / None / tuple payloads into ``list[str]``."""
@@ -49,7 +64,14 @@ class EvidenceRecord(BaseModel):
     producer_agent: str = ""
     artifact_id: str = ""
     relevance: str = ""  # free-text relation kept from the source artifact
+    # v0.6.0: data nature. Empty = unclassified (never guessed).
+    claim_type: str = ""
     verified: bool = True
+
+    @field_validator("claim_type", mode="before")
+    @classmethod
+    def _claim_type(cls, value: object) -> str:
+        return normalize_claim_type(value)
 
 
 class SourceRecord(BaseModel):
@@ -80,16 +102,26 @@ class Finding(BaseModel):
     supporting_agents: list[str] = Field(default_factory=list)
     support_kind: str = "multi_source"  # multi_source | single_source | unsupported
     notes: str = ""
+    # v0.6.0: data nature + how a derived value was computed (optional).
+    claim_type: str = ""
+    derivation: str = ""
 
     @field_validator("evidence_ids", "supporting_agents", mode="before")
     @classmethod
     def _lists(cls, value: object) -> list[str]:
         return _as_str_list(value)
 
-    @field_validator("finding_id", "statement", "support_kind", "notes", mode="before")
+    @field_validator(
+        "finding_id", "statement", "support_kind", "notes", "derivation", mode="before"
+    )
     @classmethod
     def _text(cls, value: object) -> str:
         return "" if value is None else str(value)
+
+    @field_validator("claim_type", mode="before")
+    @classmethod
+    def _claim_type(cls, value: object) -> str:
+        return normalize_claim_type(value)
 
 
 class Insight(BaseModel):
@@ -107,12 +139,18 @@ class Insight(BaseModel):
     supporting_evidence_ids: list[str] = Field(default_factory=list)
     supporting_artifact_ids: list[str] = Field(default_factory=list)
     producer_agents: list[str] = Field(default_factory=list)
+    # v0.6.0: deterministically derived from the cited evidence producers;
+    # ``producer_agents`` is kept for backward compatibility.
+    contributing_agents: list[str] = Field(default_factory=list)
     uncertainty: str = ""  # e.g. "single source", "partial coverage", ""
+    claim_type: str = ""
+    derivation: str = ""
 
     @field_validator(
         "supporting_evidence_ids",
         "supporting_artifact_ids",
         "producer_agents",
+        "contributing_agents",
         mode="before",
     )
     @classmethod
@@ -120,11 +158,16 @@ class Insight(BaseModel):
         return _as_str_list(value)
 
     @field_validator(
-        "insight_id", "statement", "uncertainty", mode="before"
+        "insight_id", "statement", "uncertainty", "derivation", mode="before"
     )
     @classmethod
     def _text(cls, value: object) -> str:
         return "" if value is None else str(value)
+
+    @field_validator("claim_type", mode="before")
+    @classmethod
+    def _claim_type(cls, value: object) -> str:
+        return normalize_claim_type(value)
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +298,7 @@ class Recommendation(BaseModel):
     supporting_evidence_ids: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     status: str = "supported"  # supported | potential | unsupported
+    claim_type: str = ""  # e.g. planning_assumption for a proposal
 
     @field_validator(
         "supporting_insight_ids",
@@ -271,6 +315,11 @@ class Recommendation(BaseModel):
     @classmethod
     def _text(cls, value: object) -> str:
         return "" if value is None else str(value)
+
+    @field_validator("claim_type", mode="before")
+    @classmethod
+    def _claim_type(cls, value: object) -> str:
+        return normalize_claim_type(value)
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +416,9 @@ class ReportBundle(BaseModel):
     producer_agents: list[str] = Field(default_factory=list)
     status: str = "completed"  # completed | degraded | failed
     degradation_reason: str = ""
+    # v0.6.0: deterministic provenance issues found after synthesis (dangling
+    # references, missing sources). Empty when every link resolves.
+    reference_issues: list[str] = Field(default_factory=list)
 
 
 class FindingIndex(BaseModel):

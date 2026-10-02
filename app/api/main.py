@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router
 
-app = FastAPI(title="AutoTeam Web API", version="0.5.0")
+app = FastAPI(title="AutoTeam Web API", version="0.6.0")
 
 app.add_middleware(
     CORSMiddleware,

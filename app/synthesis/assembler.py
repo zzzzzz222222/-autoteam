@@ -18,6 +18,11 @@ def _flat(text: str) -> str:
     return " ".join((text or "").split())
 
 
+def _nature(claim_type: str) -> str:
+    """Render a data-nature tag only when the system actually has one."""
+    return f" · nature: {claim_type}" if claim_type else ""
+
+
 def _finding_lines(bundle: ReportBundle) -> list[str]:
     lines: list[str] = []
     findings = list(bundle.synthesis.key_findings)
@@ -29,9 +34,10 @@ def _finding_lines(bundle: ReportBundle) -> list[str]:
     for item in findings:
         support = ", ".join(item.evidence_ids) or "—"
         agents = ", ".join(item.supporting_agents) or "—"
+        derivation = f"  \n  _derivation: {_flat(item.derivation)}_" if item.derivation else ""
         lines.append(
             f"- **{item.statement}**  \n  _support: {item.support_kind} · "
-            f"evidence: {support} · agents: {agents}_"
+            f"evidence: {support} · agents: {agents}{_nature(item.claim_type)}_{derivation}"
         )
     return lines
 
@@ -40,10 +46,12 @@ def _insight_lines(bundle: ReportBundle) -> list[str]:
     lines: list[str] = []
     for item in bundle.synthesis.cross_agent_insights:
         evidence = ", ".join(item.supporting_evidence_ids) or "—"
-        agents = ", ".join(item.producer_agents) or "—"
+        agents = ", ".join(item.contributing_agents or item.producer_agents) or "—"
         uncertainty = f" · uncertainty: {item.uncertainty}" if item.uncertainty else ""
+        derivation = f"  \n  _derivation: {_flat(item.derivation)}_" if item.derivation else ""
         lines.append(
-            f"- **{item.statement}**  \n  _evidence: {evidence} · agents: {agents}{uncertainty}_"
+            f"- **{item.statement}**  \n  _evidence: {evidence} · agents: {agents}"
+            f"{_nature(item.claim_type)}{uncertainty}_{derivation}"
         )
     return lines
 
@@ -105,7 +113,7 @@ def _recommendation_lines(bundle: ReportBundle) -> list[str]:
         rendered = (
             f"- **{item.statement}**  \n"
             f"  _supported by: {' · '.join(chain) or 'no direct evidence'} · "
-            f"limitations: {limitations}_"
+            f"limitations: {limitations}{_nature(item.claim_type)}_"
         )
         if item.status == "supported":
             supported.append(rendered)
@@ -241,6 +249,7 @@ def assemble_from_bundle(
             evidence_id=record.evidence_id,
             producer_agent=record.producer_agent,
             artifact_id=record.artifact_id,
+            claim_type=record.claim_type,
         )
         for record in bundle.evidence
     ]

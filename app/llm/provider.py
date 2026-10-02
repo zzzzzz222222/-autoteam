@@ -206,9 +206,13 @@ def _mock_synthesis_result(prompt: str) -> "SynthesisResult":  # noqa: F821
     )
 
     task_line = ""
-    for line in prompt.splitlines():
+    lines = prompt.splitlines()
+    for index, line in enumerate(lines):
         if line.startswith("TASK:"):
             task_line = line[len("TASK:"):].strip()
+            if not task_line and index + 1 < len(lines):
+                # the synthesis prompt writes the task on the line *after* "TASK:"
+                task_line = lines[index + 1].strip()
             break
     evidence_ids: list[str] = []
     for token in prompt.replace("|", " ").replace("(", " ").replace(")", " ").split():
@@ -228,6 +232,9 @@ def _mock_synthesis_result(prompt: str) -> "SynthesisResult":  # noqa: F821
             evidence_ids=list(primary),
             supporting_agents=["mock_synthesizer"],
             support_kind="multi_source" if len(primary) > 1 else "single_source",
+            # offline stub content is not a real market fact — tag it honestly
+            claim_type="unverified_claim",
+            derivation="deterministic offline stub (no external data)",
         )
     ]
     if secondary:
@@ -241,6 +248,8 @@ def _mock_synthesis_result(prompt: str) -> "SynthesisResult":  # noqa: F821
                 evidence_ids=list(secondary),
                 supporting_agents=["mock_synthesizer"],
                 support_kind="single_source",
+                claim_type="unverified_claim",
+                derivation="deterministic offline stub (no external data)",
             )
         )
     insights = [
@@ -255,6 +264,8 @@ def _mock_synthesis_result(prompt: str) -> "SynthesisResult":  # noqa: F821
             supporting_artifact_ids=[],
             producer_agents=["mock_synthesizer"],
             uncertainty="offline stub — verify against real evidence",
+            claim_type="derived_estimate",
+            derivation="offline deterministic combination of mock evidence snippets",
         )
     ]
     contradictions = [
@@ -310,6 +321,7 @@ def _mock_synthesis_result(prompt: str) -> "SynthesisResult":  # noqa: F821
             supporting_evidence_ids=list(primary),
             limitations=["offline mock recommendation — not a market verdict"],
             status="supported" if primary else "unsupported",
+            claim_type="planning_assumption",
         )
     ]
     return SynthesisResult(

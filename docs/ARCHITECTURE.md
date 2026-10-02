@@ -27,7 +27,9 @@ flowchart LR
     TE --> AR[Artifact]
     AR --> V[Validation]
     V --> CO[Collaboration]
-    CO --> A[Assembler]
+    CO --> EF[Evidence Filter]
+    EF --> SY[Cross-Agent Synthesis]
+    SY --> A[Assembler]
     A --> FD[Final Deliverable]
 ```
 
@@ -120,8 +122,9 @@ flowchart TD
 - **Module:** `app/tools/registry.py`, `app/tools/calculator.py`, `app/tools/local_knowledge.py`
 - **Responsibility:** Execute a structured `ToolCall` safely, returning typed `ToolResult`s and `Source`s.
 - **Input:** `ToolCall {tool_name, arguments}`.
-- **Output:** `ToolResult` (+ provenance for `web_search`).
+- **Output:** `ToolResult` (+ provenance for `web_search`) with an honest `kind` — `web` (real search succeeded) / `local` (real local deterministic tool) / `offline_mock` (deterministic stub) / `offline_fallback` (real call failed, degraded).
 - **Errors:** `ToolNotFound`, `ToolValidationError`, `ToolExecutionError`.
+- **Relations:** the runtime records `tool_kind` in the `TOOL_CALLED` trace event; the UI reads it. Offline sessions force mock tools so they cannot reach the network.
 
 ## Artifact System
 
@@ -152,8 +155,18 @@ flowchart TD
 - **Module:** `app/runtime/artifacts.py`, `app/runtime/validation.py`
 - **Responsibility:** Attach provenance to claims. Every `Evidence.source_id` must reference a `Source` in the artifact.
 - **Input:** tool results → `Source`s; deliverable key points → `Evidence`.
-- **Output:** verified evidence lists.
+- **Output:** verified evidence lists. `Evidence` carries `evidence_id`, `producer_agent`, `artifact_id` and an optional `claim_type`.
 - **Relations:** offline sources are explicitly `offline_mock` with empty urls.
+
+## Evidence Filtering & Agent Team Synthesis (v0.6.0)
+
+- **Modules:** `app/synthesis/` (`evidence_filter.py`, `synthesizer.py`, `pipeline.py`, `assembler.py`, `models.py`)
+- **Responsibility:** Turn the finished agent artifacts into an evidence-backed report.
+  - **Evidence Filter** (deterministic): `AgentArtifact[]` → `EvidenceRecord[]` + `SourceRecord[]`; stable ids, merge duplicates by id/URL, keep producer + artifact provenance, strip non-http URLs.
+  - **Cross-Agent Synthesis** (LLM proposes, schema constrains, code validates): findings, insights, contradictions, uncertainties, trade-offs, recommendations.
+- **Deterministic validation:** unknown `evidence_id`s are dropped; recommendation → insight / trade-off links are reconciled; finding `support_kind` and insight `contributing_agents` are derived from the *cited* evidence; `validate_report_references` audits for duplicate / dangling references.
+- **Data nature:** optional `claim_type` ∈ `source_fact` / `derived_estimate` / `planning_assumption` / `unverified_claim`; unknown values normalise to unclassified — never guessed.
+- **Relations:** runs in `execute_task` after artifacts are collected; on failure the session degrades to the legacy `ArtifactAssembler` and records `synthesis_status = degraded/failed`. It never joins the DAG and never replaces the scheduler.
 
 ## Retry / Replan
 
@@ -164,11 +177,11 @@ flowchart TD
 
 ## Final Deliverable
 
-- **Module:** `app/runtime/assembler.py`
-- **Responsibility:** Consume the validated artifact graph and produce a readable final report.
-- **Input:** artifacts + agent order.
-- **Output:** `FinalArtifact.to_markdown()` — findings, key data, **Evidence**, **Sources**.
-- **Relations:** the top-level result returned to the user and saved to Markdown.
+- **Module:** `app/synthesis/assembler.py` (v0.6 path), `app/runtime/assembler.py` (legacy fallback)
+- **Responsibility:** Consume the validated artifact graph + synthesis bundle and produce a readable final report.
+- **Input:** artifacts + agent order + `ReportBundle`.
+- **Output:** `FinalArtifact.to_markdown()` — Executive Summary, Key Findings, Cross-Agent Insights, Contradictions & Uncertainties, Trade-offs, Recommendations, agent sections, **Evidence**, **Sources**.
+- **Relations:** the top-level result returned to the user and saved to Markdown; the session degrades to the legacy assembler when synthesis cannot produce a valid result.
 
 ## Module Layout
 
@@ -183,5 +196,7 @@ app/
 ├── evaluation/    metrics, policy, evaluator
 ├── runtime/       understanding, capability, role, factory, tools, dependency,
 │                  artifacts, context, session, assembler, validation, events
+├── synthesis/     evidence filter, cross-agent synthesis, reference audit,
+│                  report assembler (v0.6.0 — runs after the DAG, not part of it)
 └── tools/         ToolRegistry: web_search, calculator, local_knowledge, + stubs
 ```

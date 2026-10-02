@@ -56,10 +56,10 @@ class FinalArtifact(BaseModel):
                 lines.append("")
         if self.evidence:
             lines.extend(["## Evidence", ""])
-            lines.extend(
-                f"- {item.claim} — {item.evidence} (`{item.source_id}`)"
-                for item in self.evidence
-            )
+            for item in self.evidence:
+                ref = f" `{item.evidence_id}`" if item.evidence_id else ""
+                nature = f" _[{item.claim_type}]_" if item.claim_type else ""
+                lines.append(f"- {item.claim} — {item.evidence} (`{item.source_id}`){ref}{nature}")
             lines.append("")
         if self.source_records:
             lines.extend(["## Sources", ""])

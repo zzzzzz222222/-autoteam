@@ -4,6 +4,10 @@
 
 ### 自适应多智能体编排
 
+> ⚠️ **本中文说明暂未同步到 v0.6.0。** 最新的架构、能力、测试结果与限制请以
+> [README.md](README.md) 和 [RELEASE_NOTES_v0.6.0.md](RELEASE_NOTES_v0.6.0.md) 为准；
+> 以下内容描述的是早期版本，可能已过时。
+
 > AutoTeam 动态组建智能体团队、生成经过校验的协作拓扑、异步执行、从故障中恢复，并评估拓扑行为。
 
 **状态：v0.1.0 已发布；v0.2.0（AutoTeam Research）、v0.3.0（Dynamic Team Intelligence）与 v0.4.0（Autonomous Task Completion）叠加于其上。** AutoTeam 是一个离线、确定性的演示，目的是让多智能体编排的结构变得可见、可测试。它不是生产级智能体运行时，不是托管服务，也不是真实世界的 LLM 基准。详见 [局限性](#局限性)。

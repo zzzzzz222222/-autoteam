@@ -121,6 +121,7 @@ class Evidence(BaseModel):
     evidence_id: str = ""  # v0.6 stable id (filled by EvidenceFilter)
     producer_agent: str = ""  # v0.6
     artifact_id: str = ""  # v0.6
+    claim_type: str = ""  # v0.6 data nature (empty = unclassified; never guessed)
 
 
 class ToolCall(BaseModel):

@@ -83,9 +83,12 @@ class FinalResultResponse(BaseModel):
     evidence: list[dict[str, Any]] = Field(default_factory=list)
     sections: list[dict[str, Any]] = Field(default_factory=list)
     # v0.6.0 synthesis payload (all optional — older clients ignore them)
+    findings: list[dict[str, Any]] = Field(default_factory=list)
     insights: list[dict[str, Any]] = Field(default_factory=list)
     contradictions: list[dict[str, Any]] = Field(default_factory=list)
     uncertainties: list[dict[str, Any]] = Field(default_factory=list)
     tradeoffs: list[dict[str, Any]] = Field(default_factory=list)
     recommendations: list[dict[str, Any]] = Field(default_factory=list)
     synthesis_status: str = ""
+    synthesis_degradation_reason: str = ""
+    reference_issues: list[str] = Field(default_factory=list)

@@ -1,6 +1,8 @@
 # AutoTeam
 
-**Dynamic multi-agent orchestration** — turns a task into an adaptive team, a validated dependency graph, tool-enabled agents, collaborative artifacts, and a final deliverable.
+**Dynamic multi-agent orchestration** — turns a task into an adaptive team, a validated dependency graph, tool-enabled agents, collaborative artifacts, and an evidence-backed final deliverable.
+
+> AutoTeam is a dynamic multi-agent orchestration framework for **real-world agent execution and evidence-backed research synthesis**.
 
 ```
 Task
@@ -15,12 +17,16 @@ Task
  ↓ Artifact
  ↓ Collaboration
  ↓ Validation
+ ↓ Evidence Filtering
+ ↓ Cross-Agent Synthesis (insights · contradictions · trade-offs · recommendations)
  ↓ Final Deliverable
 ```
 
 AutoTeam is an **experimental**, offline-safe, deterministic-by-default framework. Everything runs with **no API key and no network**; a real LLM and real web search are optional, plug-in capabilities.
 
-**Python 3.11+ · `pytest` 186/186 · `ruff` clean · CI: Python 3.11 & 3.12**
+**Python 3.11+ · `pytest` 218/218 · `ruff` clean · `npm run build` pass · CI: Python 3.11 & 3.12**
+
+Latest release notes: [RELEASE_NOTES_v0.6.0.md](RELEASE_NOTES_v0.6.0.md)
 
 ---
 
@@ -154,6 +160,7 @@ flowchart LR
 | v0.3.0 | Dynamic Team Intelligence (task → capability → role → agent → tool → dependency → plan) |
 | v0.4.0 | Autonomous Task Completion (session, artifacts, context assembly, collaboration, assembler, retry/replan) |
 | v0.5.0 | Real-World Agent Execution (real/mock LLM, executable tools, Sources/Evidence, validation) |
+| v0.6.0 | Agent Team Synthesis (evidence filtering, cross-agent insights, contradictions/uncertainties, trade-offs, recommendations, `claim_type`, provenance audit, Result-page readability) |
 
 ## Killer Demo
 
@@ -161,9 +168,9 @@ flowchart LR
 python examples/real_world_demo.py
 ```
 
-Runs the task **"分析 AI Agent 市场，并设计一个面向中小企业的 Agent 产品方案。"** through the full pipeline — dynamic team formation, parallel execution, tool use, artifact collaboration, evidence collection, validation — and writes a final Markdown deliverable with **Sources** and **Evidence** sections to `autoteam_output/<run_id>.md`.
+Runs the task **"分析 AI Agent 市场，并设计一个面向中小企业的 Agent 产品方案。"** through the full pipeline — dynamic team formation, parallel execution, tool use, artifact collaboration, evidence collection, validation, **cross-agent synthesis** — and writes a final Markdown deliverable with **Key Findings / Insights / Contradictions / Trade-offs / Recommendations / Sources / Evidence** to `autoteam_output/<run_id>.md`.
 
-This needs **no API key** and runs offline end-to-end.
+This needs **no API key** and runs offline end-to-end (offline runs are forced to mock tools, so they never hit the network even if search keys exist in the environment).
 
 ## Quick Start
 
@@ -192,7 +199,7 @@ ruff check .
 # run an offline demo
 python examples/autonomous_task_demo.py
 
-# run the v0.5.0 killer demo
+# run the killer demo (offline)
 python examples/real_world_demo.py
 ```
 
@@ -269,19 +276,24 @@ As part of the final pre-publication pass, a live **DeepSeek-compatible request*
 | Evidence / Sources | Verified |
 | Artifact collaboration | Verified |
 | Retry / Replan | Verified |
+| **Agent Team Synthesis (v0.6.0)** | **Implemented + Actually Verified** |
 
-What was actually verified end-to-end with the real LLM: a real DeepSeek request returned meaningful content; a **multi-agent session completed with `SUCCESS`** through dynamic team formation → agent execution → artifacts → Evidence/Sources → downstream agent context → **final artifact generation**. The **real web_search adapter was executed against Tavily's live API** with genuine results and real URLs flowing into Sources and Evidence (offline fallback re-verified separately; no fabricated URLs, no key leakage). Note these were live verification runs, not sustained production testing — AutoTeam remains an experimental design study (see [Limitations](#limitations)).
+What was actually verified end-to-end with the real LLM: a real DeepSeek request returned meaningful content; a **multi-agent session completed with `SUCCESS`** through dynamic team formation → agent execution → artifacts → Evidence/Sources → downstream agent context → **final artifact generation**. The **real web_search adapter was executed against Tavily's live API** with genuine results and real URLs flowing into Sources and Evidence (offline fallback re-verified separately; no fabricated URLs, no key leakage).
+
+v0.6.0 was additionally verified live on the release-brief task (AI Agent market + SME product plan): a real-provider run completed with `success`, 5 agents produced substantive artifacts, synthesis completed (10 findings, 4 insights, 2 contradictions, 6 uncertainties, 3 trade-offs, 6 recommendations), 8 real Tavily sources with 8 genuine URLs, and **0 dangling reference issues**. Tool kinds in that run were transparently reported as `web` + `offline_mock` + `local`. A later real run hit an invalid-JSON synthesis failure: the run still completed with the report marked `synthesis_status = degraded` and **no invented insights** — real synthesis reliability is provider-dependent and not guaranteed. Note these were live verification runs, not sustained production testing — AutoTeam remains an experimental design study (see [Limitations](#limitations)).
 
 ## Tools
 
 `ToolRegistry` exposes `validate()` and `execute()` behind a structured `ToolCall {tool_name, arguments}` schema, returning typed results:
 
-| Tool | Offline | Real |
+| Tool | Execution nature | Notes |
 |---|---|---|
-| `web_search` | deterministic `offline_mock` results, empty URLs | **Tavily-compatible POST** (Bearer, timeout, response validation, key never logged) |
-| `calculator` | safe AST arithmetic — **no `eval`** | same |
-| `local_knowledge` | controlled reads of a workspace (`.md/.txt/.json/.csv`), path-traversal blocked | same |
-| `mock_search`, `data_analyzer`, `schema_validator`, `code_analysis` | deterministic offline stubs | — |
+| `web_search` | `web` / `offline_mock` / `offline_fallback` | **Tavily-compatible POST** (Bearer, timeout, response validation, key never logged); without keys it returns deterministic `offline_mock` results with empty URLs; a failed real call degrades to `offline_fallback` and is labelled as such |
+| `calculator` | `local` | safe AST arithmetic — **no `eval`** (a real local tool, not a mock) |
+| `local_knowledge` | `local` | controlled reads of a workspace (`.md/.txt/.json/.csv`), path-traversal blocked |
+| `mock_search`, `data_analyzer`, `schema_validator`, `code_analysis` | `offline_mock` | deterministic offline stubs |
+
+Every `ToolResult` carries an honest `kind` (`web` \| `local` \| `offline_mock` \| `offline_fallback`) that is recorded in the execution trace and shown in the UI. A Real run does **not** imply every tool is Real, and a local deterministic tool is never mislabelled as a mock.
 
 Structured errors: `ToolNotFound`, `ToolValidationError`, `ToolExecutionError`.
 
@@ -290,9 +302,25 @@ Structured errors: `ToolNotFound`, `ToolValidationError`, `ToolExecutionError`.
 Every claim an agent makes is backed by a registered **Source**:
 
 - `Source {id, title, url, source_type, retrieved_at}` — a retrievable provenance record
-- `Evidence {claim, evidence, source_id}` — a claim linked to a source
+- `Evidence {claim, evidence, source_id, evidence_id, producer_agent, artifact_id, claim_type}` — a claim linked to a source
 
-`source_id` **must exist** in the artifact's sources or the artifact is rejected. Offline sources carry `source_type=offline_mock` and an empty `url`; nothing is fabricated.
+`source_id` **must exist** in the artifact's sources or the artifact is rejected. Offline sources carry `source_type=offline_mock` and an empty `url`; nothing is fabricated. Source URLs are only rendered as clickable links when they are valid `http(s)`.
+
+## Agent Team Synthesis (v0.6.0)
+
+After the DAG finishes, a deterministic **Evidence Filter** normalises all agent artifacts into `EvidenceRecord[]` + `SourceRecord[]` (stable ids, merged duplicates, full producer provenance). A cross-agent synthesis pass then produces, under schema constraints and deterministic validation:
+
+- **Key Findings** — with a support status derived from the *cited evidence* (multi-source / single-source / insufficient), never from a raw count;
+- **Cross-Agent Insights** — combining multiple evidence items; a single-agent insight is labelled as such, not dressed up;
+- **Contradictions & Uncertainties** — the system never picks a winner when evidence is insufficient;
+- **Trade-offs** — derived from the task's actual options (no hardcoded dimensions, a single viable option may yield none);
+- **Recommendations** — traceable to insights / trade-offs / evidence, with status `supported` / `potential` / `unsupported`.
+
+Citations are validated in code: unknown `evidence_id`s are dropped, recommendation → insight / trade-off links are reconciled, and a **reference audit** reports dangling references so the UI can say “reference missing” instead of inventing a link.
+
+### Data nature: `claim_type`
+
+Numeric / business claims can be tagged (optional, backward-compatible) as `source_fact`, `derived_estimate`, `planning_assumption` or `unverified_claim`. An unknown or missing tag is left **unclassified** — the system never guesses a data nature from formatting. `derived_estimate` items carry their inputs/method in `derivation`. These tags are model-proposed labels validated against a whitelist — a label, not an independent fact-check.
 
 ## Agent Collaboration
 
@@ -317,16 +345,19 @@ Current verified status:
 
 | Check | Result |
 |---|---|
-| `pytest -q` | 186 passed |
+| `pytest -q` | 218 passed |
 | `ruff check .` | clean |
 | Web API (`tests/test_api.py`) | health / create / team / events / artifacts / result + E2E, offline |
-| v0.1.0 regression | pass |
-| v0.2.0 regression | pass |
-| v0.3.0 regression | pass |
-| v0.4.0 regression | pass |
-| v0.5.0 tests (36) | pass |
+| v0.1.0–v0.5.0 regression | pass |
+| v0.6.0 synthesis tests | pass (evidence filtering, support derivation, `claim_type`, reference audit, degraded/legacy fallback) |
+| Tool-kind & offline-determinism tests | pass |
+| Offline E2E (`examples/real_world_demo.py`) | SUCCESS, `offline_mock` sources |
 | Offline demos | run in CI, no API key |
-| UI | import smoke-tested in CI; Vue frontend `npm run build` passes |
+| UI | import smoke-tested in CI; Vue frontend `npm run build` (vue-tsc strict + Vite) passes |
+| Frontend unit tests | none configured in this repo |
+| Security scan (tracked files) | no tracked secrets / logs / absolute paths |
+
+Real E2E was also executed manually with the configured provider + Tavily (see [Real LLM Verification](#real-llm-verification)); report quality was inspected manually, not inferred from task status.
 
 ## Web UI
 
@@ -336,7 +367,7 @@ The product UI (introduced at the v0.5.0 finalization) is a single Vue 3 + TypeS
 frontend/
 ├── src/
 │   ├── views/          Workspace · Execution · Team · Artifacts · Result
-│   ├── components/     StatusBadge (status strictly from backend events)
+│   ├── components/     status badge + provenance reference chips
 │   ├── stores/team.ts  Pinia store (SSE-driven live state)
 │   └── api/client.ts   typed client for the FastAPI endpoints
 app/api/
@@ -348,6 +379,8 @@ app/api/
 
 - **SSE** (`GET /api/tasks/{id}/stream`) replays the Core's real `ExecutionTrace` — no faked events, no timers in the frontend.
 - Agent status, tool calls, artifacts, evidence and sources all come from the existing Core objects.
+- The **Result page** separates the readable report body from traceability: Key Findings / Insights / Contradictions / Trade-offs / Recommendations are structured blocks with support status, data nature and provenance; internal ids (evidence / insight / trade-off / artifact) live in expandable details; recommendations expand into a `Recommendation → Insight/Trade-off → Evidence → Source` chain (unresolved ids render as “reference missing”).
+- Tool chips read `tool_kind` from real execution events, so `web` / `local` / `offline_mock` / `offline_fallback` are shown accurately.
 - `npm run build` passes (vue-tsc strict + Vite production build).
 
 ## Security
@@ -363,9 +396,12 @@ AutoTeam is an **experimental design study**, not a production platform. Honest 
 
 - Offline mock results are **not** a substitute for real model quality.
 - Real LLM and Real Web Search (Tavily) were **verified against live APIs** during pre-publication smoke testing (not sustained production testing).
+- Synthesis is **evidence-grounded but not fact-checked**: `claim_type` and insights are model-proposed, then deterministically constrained (id resolution, support derivation, whitelist). Market numbers come from the cited sources and are not independently audited by AutoTeam.
+- **Real synthesis reliability is provider-dependent and not guaranteed**: a real model can return invalid JSON for the synthesis schema. The run then degrades transparently (`synthesis_status = degraded`, artifact-level findings) instead of fabricating insights.
+- A cross-agent insight is only labelled cross-agent when its cited evidence comes from ≥2 agents; otherwise it is shown as single-agent.
 - Session state is **in-memory** (no persistence, no checkpointing).
 - Completeness is judged by **deterministic rules**, not model scoring.
-- This is **not** a production-grade distributed execution layer.
+- This is **not** a production-grade distributed execution layer and makes **no** “fully autonomous” or “100% accurate” claim.
 
 ## Roadmap
 

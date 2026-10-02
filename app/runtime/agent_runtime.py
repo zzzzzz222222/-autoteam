@@ -208,13 +208,13 @@ class AgentRuntime:
             except Exception as exc:  # defensive: run() already catches, but stay safe
                 result = ToolResult(query=task.description, offline=True, error=str(exc))
             results.append(result)
-            label = "offline mock" if result.offline else "web"
             if self.trace is not None:
                 self.trace.record(
                     "TOOL_CALLED",
                     agent_id=agent_id,
-                    message=f"{tool_name} ({label})",
+                    message=f"{tool_name} ({_tool_label(result)})",
                     tool=tool_name,
+                    tool_kind=result.kind,
                     offline=result.offline,
                     error=result.error or "",
                 )
@@ -224,7 +224,7 @@ class AgentRuntime:
         blocks: list[str] = []
         for result in results:
             tool_name = result.tool or "tool"
-            label = "offline mock" if result.offline else "web"
+            label = _tool_label(result)
             items = "\n".join(f"- {item}" for item in result.results) or "- (no results)"
             error = f"\n- error: {result.error}" if result.error else ""
             blocks.append(f"[{tool_name} ({label})]\n{items}{error}")
@@ -321,13 +321,28 @@ class AgentRuntime:
                         agent_id=agent_id,
                         message=f"{tool_name} via tool-call",
                         tool=tool_name,
+                        tool_kind=result.kind,
+                        offline=result.offline,
                         error=result.error or "",
                     )
                 continue
-            deliverable = decision.deliverable or AgentDeliverable(
-                summary="[real mode] decision without deliverable"
-            )
-            break
+            if decision.deliverable is not None:
+                deliverable = decision.deliverable
+                break
+            # The model chose to finish without a deliverable. Do NOT fabricate
+            # success: if tools produced material, fall back to an explicitly
+            # partial deliverable; otherwise fail so retry/replan can react.
+            if collected:
+                deliverable = AgentDeliverable(
+                    title=f"{agent.role.name} — partial deliverable",
+                    summary=(
+                        "[real mode] model finished without a deliverable; "
+                        "partial tool results only."
+                    ),
+                    key_points=[item for result in collected for item in result.results][:3],
+                )
+                break
+            raise ProviderError("agent finished without a deliverable")
         if deliverable is None:  # budget/iteration limit reached
             deliverable = AgentDeliverable(
                 title=f"{agent.role.name} — partial deliverable",
@@ -551,6 +566,16 @@ class AgentRuntime:
             raise
 
 
+def _tool_label(result: ToolResult) -> str:
+    """Accurate, honest label for a tool result's execution nature."""
+    return {
+        "web": "web",
+        "local": "local",
+        "offline_mock": "offline mock",
+        "offline_fallback": "offline fallback",
+    }.get(result.kind, "offline")
+
+
 def _friendly_error(exc: Exception) -> str:
     """User-facing failure reason. Full exception stays in logs / raise chain."""
     name = type(exc).__name__
@@ -568,4 +593,6 @@ def _friendly_error(exc: Exception) -> str:
         return "Agent execution failed: invalid structured response"
     if "LLM provider call failed" in text:
         return "Agent execution failed: provider unavailable"
+    if "without a deliverable" in text:
+        return "Agent execution failed: model returned no deliverable"
     return f"Agent execution failed: {name}"

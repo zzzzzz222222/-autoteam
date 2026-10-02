@@ -99,6 +99,7 @@ class RunHandle:
                         if synthesis is not None
                         else []
                     ),
+                    "findings": _serialize_findings(synthesis),
                     "contradictions": (
                         [item.model_dump() for item in synthesis.contradictions]
                         if synthesis is not None
@@ -122,6 +123,15 @@ class RunHandle:
                     "synthesis_status": str(
                         getattr(bundle, "status", "")
                         or session.final_artifact.metadata.get("synthesis_status", "")
+                    ),
+                    "synthesis_degradation_reason": str(
+                        getattr(bundle, "degradation_reason", "")
+                        or session.final_artifact.metadata.get(
+                            "synthesis_degradation_reason", ""
+                        )
+                    ),
+                    "reference_issues": list(
+                        getattr(bundle, "reference_issues", []) or []
                     ),
                 }
             return {
@@ -244,3 +254,26 @@ def _failed_session(task: str, exc: Exception) -> Any:
     session.error = f"{type(exc).__name__}: {str(exc)[:200]}"
     session.trace.record("TASK_COMPLETED", message="failed")
     return session
+
+
+def _serialize_findings(synthesis: Any) -> list[dict[str, Any]]:
+    """Merge key/supported/single-source findings, de-duplicated by id.
+
+    Read-only projection of the real synthesis structure — no invented items.
+    """
+    if synthesis is None:
+        return []
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for group in (
+        getattr(synthesis, "key_findings", []),
+        getattr(synthesis, "supported_findings", []),
+        getattr(synthesis, "single_source_findings", []),
+    ):
+        for item in group:
+            key = item.finding_id or f"_{len(merged)}"
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(item.model_dump())
+    return merged
