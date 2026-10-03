@@ -383,10 +383,16 @@ def test_execute_task_offline_includes_synthesis_sections():
     markdown = session.final_artifact.to_markdown()
     assert "## Executive Summary" in markdown
     assert "## Recommendations" in markdown
-    # synthesis provenance fields are populated offline too
+    # synthesis provenance fields are populated offline too. A claim is either
+    # bound to a real source (never auto-verified) or explicitly unbound.
     assert session.final_artifact.evidence
+    known_sources = {source.id for source in session.final_artifact.source_records}
     for item in session.final_artifact.evidence:
-        assert item.source_id
+        if item.source_id:
+            assert item.source_id in known_sources
+            assert item.review_status != "verified"
+        else:
+            assert item.review_status == "unsupported"
     event_types = [event.type for event in session.trace.events]
     assert "SYNTHESIS_STARTED" in event_types
     assert "SYNTHESIS_COMPLETED" in event_types or "SYNTHESIS_FAILED" in event_types

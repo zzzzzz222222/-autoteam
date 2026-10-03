@@ -56,17 +56,31 @@ class CompletionCriteria:
         successful_agents: int,
         total_agents: int,
         produced_artifact_types: set[str],
+        partial_agents: int = 0,
+        source_gaps_present: bool = False,
     ) -> SessionStatus:
-        if total_agents == 0 or successful_agents == 0:
+        if total_agents == 0 or (successful_agents == 0 and partial_agents == 0):
             return SessionStatus.FAILED
         missing = [
             artifact_type
             for artifact_type in self.required_artifact_types
             if artifact_type not in produced_artifact_types
         ]
-        if successful_agents == total_agents and not missing:
+        # A run is only a full SUCCESS when every agent completed (no partials),
+        # every required artifact type is present, AND there are no unmet source
+        # needs. Any of those failures caps the verdict at PARTIAL_SUCCESS so a
+        # session with incomplete or unsourced deliverables is never reported as
+        # a clean success (R2 / R5 honesty).
+        if (
+            successful_agents == total_agents
+            and partial_agents == 0
+            and not missing
+            and not source_gaps_present
+        ):
             return SessionStatus.SUCCESS
-        if self.allow_partial and successful_agents >= self.minimum_successful_agents:
+        if self.allow_partial and (
+            successful_agents + partial_agents
+        ) >= self.minimum_successful_agents:
             return SessionStatus.PARTIAL_SUCCESS
         return SessionStatus.FAILED
 
@@ -247,11 +261,40 @@ def execute_task(
                 synth_exc
             )[:300]
         produced = {artifact.output_type.value for artifact in session.artifacts}
-        successful = sum(
-            1 for result in results.values() if result.status is ExecutionStatus.SUCCESS
-        )
+        # v0.6.0-final (R5): distinguish *fully* successful agents from those
+        # that returned an explicitly partial deliverable. A partial artifact is
+        # still counted toward "produced something" but must not inflate the full
+        # success count.
+        fully_successful = 0
+        partial_count = 0
+        for result in results.values():
+            if result.status is not ExecutionStatus.SUCCESS:
+                continue
+            output = result.output
+            if isinstance(output, AgentArtifact) and output.metadata.get("partial"):
+                partial_count += 1
+            else:
+                fully_successful += 1
+        # v0.6.0-final (R2): only a *truly unmet* source need — a source-required
+        # deliverable that produced zero source records at all — caps the verdict
+        # at PARTIAL_SUCCESS. Downgraded/unbound claims that still carry source
+        # records (expected for offline stubs and for real runs whose retrieval
+        # succeeded) remain reported in the synthesis audit but do not by
+        # themselves block SUCCESS.
+        bundle = getattr(session, "synthesis_bundle", None)
+        source_gaps_present = False
+        if bundle is not None:
+            gaps = getattr(bundle, "source_gaps", None) or []
+            source_gaps_present = any(
+                bool(g.get("source_required")) and int(g.get("source_count", 1) or 0) == 0
+                for g in gaps
+            )
         session.status = session.criteria.evaluate(
-            successful, len(results), produced
+            fully_successful,
+            len(results),
+            produced,
+            partial_agents=partial_count,
+            source_gaps_present=source_gaps_present,
         )
         if session.final_artifact is not None:
             session.final_artifact.metadata["status"] = session.status.value

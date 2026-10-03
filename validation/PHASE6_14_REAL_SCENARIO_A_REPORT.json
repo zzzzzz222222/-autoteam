@@ -1,0 +1,161 @@
+{
+  "phase": "6.14",
+  "title": "AutoTeam v0.6.0 - Phase 6.14 Real Scenario A single validation and final audit",
+  "generated_at": "2026-10-02",
+  "verdict": "PASS",
+  "verdict_detail": "valid_real_e2e",
+  "classification_tags": ["real_run", "actual_test", "static_audit", "design_inference", "unverified"],
+  "resolves": "P6.13 BLOCKED (gate now proven passable; real e2e verified)",
+  "authorization": {
+    "gate_flipped": true,
+    "runs_executed_this_phase": 1,
+    "second_real_run": false,
+    "baseline_run": false,
+    "budget_expanded": false,
+    "secrets_leaked": false,
+    "git_written": false,
+    "auto_entered_p615": false,
+    "budget": {
+      "max_llm_calls": 20,
+      "max_tool_calls": 6,
+      "max_iterations": 4,
+      "timeout": 300,
+      "max_total_minutes": 10,
+      "runs": 1
+    }
+  },
+  "gate_mutation_record": {
+    "file": "validation/run_scenario.py",
+    "line": 58,
+    "before": "REAL_EXECUTION_ENABLED = False",
+    "temporary": "REAL_EXECUTION_ENABLED = True",
+    "after": "REAL_EXECUTION_ENABLED = False",
+    "sha256_before": "f23c27f8def55e3b59eda8b1f8be3af990deb6756c81d1189551e3eecb79f543",
+    "sha256_temporary": "cd5bc83d9006cb00985e01df58fecf98a20c552da2e855b9e6073030b711b850",
+    "sha256_after": "f23c27f8def55e3b59eda8b1f8be3af990deb6756c81d1189551e3eecb79f543",
+    "restore_verified": true,
+    "restore_matches_before": true,
+    "lingering_process": false
+  },
+  "preflight": {
+    "cli_matches_spec": true,
+    "provider_resolves_to_real": true,
+    "provider_type": "OpenAILLMProvider",
+    "provider_model": "deepseek-chat",
+    "provider_base_url": "https://api.deepseek.com/v1",
+    "requirement_analysis_in_capability_tools": true,
+    "web_search_keys_present": true,
+    "web_search_mode": "real_external (Tavily-compatible; graceful offline_fallback)"
+  },
+  "real_run_metrics": {
+    "run_id": "run_bf825850",
+    "batch_dir": "validation/runs/20261002T140813Z_A_real",
+    "run_dir": "validation/runs/20261002T140813Z_A_real/run1_run_bf825850",
+    "is_real_llm": true,
+    "is_real_web_search": true,
+    "web_search_calls": 6,
+    "offline_search_calls": 0,
+    "agents": 8,
+    "agent_all_success": true,
+    "dag_layers": 4,
+    "dag_edges": 11,
+    "llm_calls": 16,
+    "blocked_llm_calls": 0,
+    "tool_calls_total": 6,
+    "tool_calls_by_kind": {"web": 6, "local": 0, "offline_mock": 0, "offline_fallback": 0},
+    "retries": 1,
+    "elapsed_seconds": 171.122,
+    "termination": "completed",
+    "aborted": false,
+    "run_timeout": false,
+    "budget_exhausted": false,
+    "session_status": "success",
+    "is_valid_real_e2e": true
+  },
+  "team_tool_mapping": {
+    "requirement_analyst": {"capabilities": ["requirement_analysis"], "tools": ["web_search"], "p612_fix_confirmed": true},
+    "market_researcher": {"tools": ["web_search"]},
+    "competitor_analyst": {"tools": ["web_search"]},
+    "technology_analyst": {"tools": ["web_search"]},
+    "data_analyst": {"tools": ["data_analyzer", "calculator"]},
+    "backend_developer": {"tools": ["code_analysis"]},
+    "proposal_writer": {"tools": []},
+    "report_writer": {"tools": []}
+  },
+  "source_identity_audit": {
+    "total_sources": 25,
+    "by_type": {"web": 25},
+    "unique_normalized_identities": 25,
+    "all_https": true,
+    "no_empty_urls": true,
+    "no_offline_mock": true,
+    "no_duplicate_urls": true,
+    "no_mock_as_real": true
+  },
+  "evidence_binding_audit": {
+    "total_evidence": 83,
+    "bound_to_real_web_source": 20,
+    "unbound_assumption_downgraded": 63,
+    "dangling_references": 0,
+    "no_fabricated_references": true
+  },
+  "synthesis_six_types": {
+    "available": true,
+    "status": "completed",
+    "degraded": false,
+    "findings": 6,
+    "insights": 4,
+    "contradictions": 4,
+    "uncertainties": 5,
+    "tradeoffs": 3,
+    "recommendations": 5,
+    "supported_findings": 0,
+    "single_source_findings": 0
+  },
+  "requirement_analyst_web_search_audit": {
+    "authorized_web_search": true,
+    "tool_denied_occurred": false,
+    "invoked_web_search_this_run": false,
+    "own_sources_produced": 0,
+    "own_evidence_produced": 9,
+    "own_evidence_bound": 0,
+    "deliverable_transparently_states_assumptions": true,
+    "offline_run_proof_of_path": "run_68744dc8 (P6.12 offline) requirement_analyst called web_search (7 tool calls)",
+    "interpretation": "design_inference (authorization fixed; LLM decomposition did not trigger web_search this run; not a defect)"
+  },
+  "honesty_assessment": {
+    "citation_audit_present": true,
+    "evidence_gaps_present": true,
+    "unsupported_claims_flagged": true,
+    "temporal_volatility_flagged": true,
+    "no_fabrication": true
+  },
+  "offline_regression": {
+    "pytest": "471 passed, 7 skipped",
+    "ruff": "All checks passed!",
+    "frontend_build": "not_triggered (frontend unchanged)"
+  },
+  "watch_items": [
+    "real_api_cost_usd not_measured (provider discards token usage)",
+    "requirement_analyst real web_search invocation not guaranteed by LLM decomposition",
+    "technology_analyst partial deliverable under tight budget (evidence thin)",
+    "cross_run_reproducibility not_verified (single run only)",
+    "baseline not_performed (prohibited in P6.14)"
+  ],
+  "historical_real_runs_today": [
+    {"batch": "20261002T074824Z_A_real", "verdict": "valid_real_e2e", "llm": 16, "web": 7, "note": "before P6.14 authorization"},
+    {"batch": "20261002T081913Z_A_real", "verdict": "degraded_partial", "llm": 12, "web": 6, "note": "before P6.14 authorization"},
+    {"batch": "20261002T083810Z_A_real", "verdict": "degraded_partial", "llm": 17, "web": 6, "note": "before P6.14 authorization"},
+    {"batch": "20261002T085948Z_A_real", "verdict": "valid_real_e2e", "llm": 17, "web": 5, "note": "before P6.14 authorization"},
+    {"batch": "20261002T095017Z_A_real", "verdict": "valid_real_e2e", "llm": 18, "web": 5, "note": "before P6.14 authorization"},
+    {"batch": "20261002T102529Z_A_real", "verdict": "valid_real_e2e", "llm": 15, "web": 6, "note": "before P6.14 authorization"},
+    {"batch": "20261002T140813Z_A_real", "verdict": "valid_real_e2e", "llm": 16, "web": 6, "note": "P6.14 authorized (this report)"}
+  ],
+  "unverifiable_fields": {
+    "real_api_cost_usd": "not_measured",
+    "token_usage": "not_available",
+    "requirement_analyst_web_search_invoked_this_run": "no (authorized=yes, offline_verified=yes)",
+    "cross_run_reproducibility": "not_verified",
+    "baseline_comparison": "not_performed"
+  }
+}

@@ -72,6 +72,16 @@ class ToolExecutionError(ToolError):
     pass
 
 
+class ToolNotAllowed(ToolError):
+    """The tool exists but the calling agent is not authorised to use it.
+
+    v0.6.11 (P610-2): ``Agent.tools`` is the permission boundary. This is raised
+    *before* any execution so an unauthorised name can never cause an external
+    call, a cost or a side effect. Distinct from ``ToolNotFound`` so an
+    "unknown tool" and a "not allowed tool" stay separately auditable.
+    """
+
+
 def mock_search(query: str) -> ToolResult:
     stubs = _offline_web_results(query)
     return ToolResult(
@@ -266,6 +276,54 @@ class ToolRegistry:
 
     def available(self) -> list[str]:
         return list(self._tools)
+
+    def available_for(self, allowed: object) -> list[str]:
+        """Registered tools the caller is actually authorised to use (v0.6.11).
+
+        Advertise only authorised tools to the LLM so the schema itself already
+        reflects the permission boundary. ``allowed=None`` (an undeclared tool
+        list) yields **no** tools — a missing declaration is never treated as
+        "all tools".
+
+        Order follows the *authorisation* list (v0.6.12) so the advertised schema
+        is identical to ``AgentSpec.tools`` rather than merely the same set.
+        """
+        if allowed is None:
+            return []
+        if isinstance(allowed, str):
+            allowed = [allowed]
+        try:
+            permitted = [str(name) for name in allowed]  # type: ignore[union-attr]
+        except TypeError:
+            return []
+        seen: set[str] = set()
+        return [
+            name
+            for name in permitted
+            if name in self._tools and not (name in seen or seen.add(name))
+        ]
+
+    def validate_allowed(self, tool_name: str, allowed: object) -> None:
+        """Second, code-level permission check (never rely on the LLM schema).
+
+        Raises ``ToolNotFound`` for an unregistered tool and ``ToolNotAllowed``
+        for a registered-but-unauthorised one. Both are raised *before*
+        ``execute`` so nothing runs.
+        """
+        self.validate(tool_name)
+        if allowed is None:
+            raise ToolNotAllowed(f"tool '{tool_name}' denied: agent declares no tools")
+        if isinstance(allowed, str):
+            allowed = [allowed]
+        try:
+            permitted = {str(name) for name in allowed}  # type: ignore[union-attr]
+        except TypeError:
+            permitted = set()
+        if tool_name not in permitted:
+            raise ToolNotAllowed(
+                f"tool '{tool_name}' denied: not in the agent's declared tools "
+                f"{sorted(permitted)}"
+            )
 
     def validate(self, tool_name: str) -> None:
         """Raise ``ToolNotFound`` if the tool is not registered."""

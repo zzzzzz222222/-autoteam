@@ -28,7 +28,10 @@ def validate_artifact(artifact: AgentArtifact) -> None:
 
     source_ids = {source.id for source in artifact.source_records}
     for item in artifact.evidence:
-        if item.source_id not in source_ids:
+        # An empty source_id means "no source could be matched" (unverified
+        # claim). Unknown non-empty ids are still rejected: links are never
+        # fabricated just to satisfy this check.
+        if item.source_id and item.source_id not in source_ids:
             raise ArtifactValidationError(
                 f"InvalidEvidenceReference: {item.source_id!r} not in "
                 f"{artifact.artifact_id} sources"

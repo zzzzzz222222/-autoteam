@@ -22,6 +22,12 @@ class FinalSection(BaseModel):
     structured_data: dict[str, str] = Field(default_factory=dict)
 
 
+def _clip(value: object, limit: int) -> str:
+    """Flatten and truncate long text so raw dumps never enter the report body."""
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
 class FinalArtifact(BaseModel):
     title: str
     summary: str = ""
@@ -39,7 +45,47 @@ class FinalArtifact(BaseModel):
         if run_id:
             lines.append(f"_AutoTeam run `{run_id}` · status **{status}** · {now_iso()}_")
             lines.append("")
+        if self.metadata.get("fallback_used"):
+            reason = str(self.metadata.get("fallback_reason") or "see synthesis.json")
+            if self.metadata.get("partial_stages_used"):
+                lines.extend(
+                    [
+                        f"> **Partial synthesis** — {_clip(reason, 300)}",
+                        "> The synthesis sections below are the validated output of the "
+                        "stages that succeeded; the remaining categories are empty rather "
+                        "than invented. Every citation is still traceable.",
+                        "",
+                    ]
+                )
+            else:
+                lines.extend(
+                    [
+                        f"> **Degraded synthesis** — {_clip(reason, 300)}",
+                        "> The synthesis sections below are deterministic fallback output, "
+                        "not cross-agent conclusions. Every citation is still traceable.",
+                        "",
+                    ]
+                )
         lines.extend(["## Executive Summary", "", self.summary, ""])
+        # v0.6.6 (A2): if the prompt budget trimmed high-value evidence, the report
+        # says so instead of implying the model saw everything.
+        selection = self.metadata.get("evidence_selection") or {}
+        if isinstance(selection, dict) and selection.get("coverage_gap_note"):
+            gaps = selection.get("coverage_gaps") or []
+            lines.extend(
+                [
+                    f"> **Prompt coverage gap** — {_clip(selection['coverage_gap_note'], 240)} "
+                    f"({len(gaps)} record(s) carrying unique numbers, sole-source "
+                    "coverage or risk signals, e.g. "
+                    + ", ".join(
+                        str(item.get("evidence_id"))
+                        for item in gaps[:5]
+                        if isinstance(item, dict)
+                    )
+                    + ").",
+                    "",
+                ]
+            )
         for section in self.sections:
             lines.append(f"## {section.title}")
             lines.append("")
@@ -51,26 +97,83 @@ class FinalArtifact(BaseModel):
                 lines.append("**Key data:**")
                 lines.append("")
                 lines.extend(
-                    f"- `{key}` = `{value}`" for key, value in section.structured_data.items()
+                    f"- `{key}` = `{_clip(value, 200)}`"
+                    for key, value in section.structured_data.items()
                 )
                 lines.append("")
         if self.evidence:
+            compact = bool(self.metadata.get("compact_evidence"))
             lines.extend(["## Evidence", ""])
+            bound = sum(
+                1
+                for item in self.evidence
+                if item.source_id and (item.evidence or "").strip()
+            )
+            # v0.6.6 (A6): never imply full source coverage — state how much of
+            # the evidence is actually bound to a retrieved snippet.
+            lines.append(
+                f"> {len(self.evidence)} evidence record(s) · {bound} bound to a "
+                f"retrieved snippet · {len(self.evidence) - bound} unbound (agent "
+                "statements without a retrieved snippet)."
+            )
+            lines.append("")
+            if compact:
+                lines.append(
+                    "> Compact view — each claim with the matching snippet and source. "
+                    "Full snippets and provenance live in the run's `evidence.json`."
+                )
+                lines.append("")
             for item in self.evidence:
                 ref = f" `{item.evidence_id}`" if item.evidence_id else ""
                 nature = f" _[{item.claim_type}]_" if item.claim_type else ""
-                lines.append(f"- {item.claim} — {item.evidence} (`{item.source_id}`){ref}{nature}")
+                if compact:
+                    status = getattr(item, "review_status", "") or "not_checked"
+                    lines.append(
+                        f"- {_clip(item.claim, 240)} — {_clip(item.evidence, 300)} "
+                        f"(`{item.source_id or 'unbound'}`){ref}{nature} _[{status}]_"
+                    )
+                else:
+                    lines.append(
+                        f"- {item.claim} — {item.evidence} (`{item.source_id}`){ref}{nature}"
+                    )
             lines.append("")
         if self.source_records:
             lines.extend(["## Sources", ""])
-            lines.extend(
-                f"{index}. {source.title or source.id} "
-                f"({source.source_type}{', ' + source.url if source.url else ''})"
-                for index, source in enumerate(self.source_records, start=1)
+            mock_count = sum(
+                1 for source in self.source_records if source.source_type == "offline_mock"
             )
+            for index, source in enumerate(self.source_records, start=1):
+                title = source.title or source.id
+                if source.source_type == "offline_mock":
+                    # v0.6.6 (A9): a stub must never read as a live web page.
+                    lines.append(
+                        f"{index}. {title} — **offline_mock** (deterministic stub, "
+                        "NOT a live web source)"
+                    )
+                    continue
+                rendered = f"{index}. {title} — {source.source_type}"
+                if source.url:
+                    rendered += f", {source.url}"
+                status = getattr(source, "access_status", "") or ""
+                # v0.6.6 (A10): an observed fetch failure is stated as such; it is
+                # never presented as "the page has no such content".
+                if status and status.lower() not in {"ok", "success", "200"}:
+                    note = getattr(source, "access_note", "") or ""
+                    rendered += (
+                        f" — **could not be re-checked** ({status}"
+                        f"{'; ' + note if note else ''}); its content was never confirmed"
+                    )
+                lines.append(rendered)
             lines.append("")
             if all(source.source_type == "offline_mock" for source in self.source_records):
                 lines.append("> Data source: offline_mock (deterministic stubs, no live web).")
+                lines.append("")
+            elif mock_count:
+                lines.append(
+                    f"> Mixed provenance: {len(self.source_records) - mock_count} web "
+                    f"source(s) and {mock_count} offline_mock stub(s). Entries marked "
+                    "**offline_mock** are not live web pages."
+                )
                 lines.append("")
         elif self.sources:
             lines.extend(["## Sources", ""])

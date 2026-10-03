@@ -12,11 +12,16 @@ which returns a Pydantic-validated object. This keeps the rule
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
+
+from app.llm.structured import (
+    CATEGORY_LENGTH_LIMIT,
+    StructuredParseError,
+    parse_structured,
+)
 
 
 @runtime_checkable
@@ -28,10 +33,29 @@ class LLMProvider(Protocol):
 class ProviderError(RuntimeError):
     """A real provider call failed (auth, network, rate limit, bad response).
 
-    The message intentionally contains only the exception type — never the API
-    key, request headers or raw response. Callers decide whether to fall back
-    to the mock provider or fail the run.
+    The message intentionally contains only the exception type (plus, for
+    malformed structured output, a *classified* reason). It never contains the
+    API key, request headers or the raw response.
+
+    ``category`` distinguishes a transport/provider failure (``provider_error``)
+    from unparseable structured output (``structured_parse``); ``retryable``
+    tells the caller whether re-asking could plausibly help. ``diagnostics``
+    carries non-reversible facts (length, hash, delimiter balance), never the
+    model's raw text.
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: str = "provider_error",
+        retryable: bool = False,
+        diagnostics: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.category = category
+        self.retryable = retryable
+        self.diagnostics = diagnostics
 
 
 class MockLLMProvider:
@@ -53,33 +77,91 @@ class MockLLMProvider:
 class OpenAILLMProvider:
     """OpenAI-compatible provider (works with DeepSeek or any /v1 endpoint)."""
 
-    def __init__(self, *, api_key: str, base_url: str | None, model: str) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        base_url: str | None,
+        model: str,
+        max_tokens: int | None = None,
+    ) -> None:
         from openai import OpenAI
 
         self._client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
+        # Optional output ceiling. ``None`` = do NOT send the parameter, so any
+        # endpoint keeps its own default (no assumption about what it supports).
+        self.max_tokens = max_tokens
+        # Best-effort metadata from the most recent call (never contains the key,
+        # headers or the raw prompt/response text).
+        self.last_response_meta: dict[str, object] = {}
 
     def structured_completion(self, prompt: str, response_model: type[BaseModel]) -> BaseModel:
+        request: dict[str, object] = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "Return only valid JSON matching the requested schema.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "response_format": {"type": "json_object"},
+        }
+        max_tokens = getattr(self, "max_tokens", None)
+        if max_tokens is not None:
+            # Only sent when explicitly configured: some OpenAI-compatible
+            # endpoints reject unknown request parameters.
+            request["max_tokens"] = max_tokens
         try:
-            response = self._client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Return only valid JSON matching the requested schema.",
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-            )
-            content = response.choices[0].message.content
-            if not content:
-                raise ValueError("LLM returned an empty response.")
-            return response_model.model_validate(json.loads(content))
+            response = self._client.chat.completions.create(**request)
         except ProviderError:
             raise
         except Exception as exc:
+            # transport / auth / rate-limit failures are never auto-retried here
             raise ProviderError(f"LLM provider call failed: {type(exc).__name__}") from exc
+
+        try:
+            choice = response.choices[0]
+            content = choice.message.content
+        except Exception as exc:
+            raise ProviderError(f"LLM provider call failed: {type(exc).__name__}") from exc
+
+        finish_reason = str(getattr(choice, "finish_reason", "") or "")
+        usage = getattr(response, "usage", None)
+        usage_meta: dict[str, object] = {}
+        if usage is not None:
+            for field in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                value = getattr(usage, field, None)
+                if isinstance(value, int):
+                    usage_meta[field] = value
+        self.last_response_meta = {
+            "finish_reason": finish_reason or "unavailable",
+            "usage": usage_meta or None,
+            "usage_available": bool(usage_meta),
+        }
+
+        try:
+            # Conservative, classified parsing: fences may be stripped, truncated
+            # or non-JSON payloads are rejected (never repaired, never guessed).
+            return parse_structured(content, response_model)
+        except StructuredParseError as exc:
+            # A confirmed length stop is stronger evidence than the delimiter
+            # heuristic, so it wins when the endpoint reports one.
+            category = CATEGORY_LENGTH_LIMIT if finish_reason == "length" else exc.category
+            diagnostics = exc.diagnostics
+            if finish_reason:
+                diagnostics = f"finish_reason={finish_reason} {diagnostics}"
+            if usage_meta:
+                diagnostics = f"{diagnostics} usage={usage_meta}"
+            error = ProviderError(
+                f"structured output invalid [{category}]: {exc}",
+                category="structured_parse",
+                retryable=True,
+                diagnostics=diagnostics,
+            )
+            error.parse_category = category
+            raise error from exc
 
 
 def get_llm_provider() -> LLMProvider:
@@ -100,7 +182,17 @@ def get_llm_provider() -> LLMProvider:
     base_url = os.getenv("AUTOTEAM_LLM_BASE_URL") or (
         "https://api.deepseek.com/v1" if provider == "deepseek" else None
     )
-    return OpenAILLMProvider(api_key=api_key, base_url=base_url, model=model)
+    raw_max_tokens = os.getenv("AUTOTEAM_LLM_MAX_TOKENS", "").strip()
+    max_tokens: int | None = None
+    if raw_max_tokens:
+        try:
+            parsed = int(raw_max_tokens)
+            max_tokens = parsed if parsed > 0 else None
+        except ValueError:
+            max_tokens = None
+    return OpenAILLMProvider(
+        api_key=api_key, base_url=base_url, model=model, max_tokens=max_tokens
+    )
 
 
 def _mock_structured(prompt: str, response_model: type[BaseModel]) -> BaseModel:

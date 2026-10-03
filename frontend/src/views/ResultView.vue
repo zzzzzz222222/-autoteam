@@ -143,14 +143,32 @@ function usedBy(id: string): string[] {
 function supportKey(kind: string): string {
   if (kind === 'multi_source') return 'result.support.multi_source'
   if (kind === 'single_source') return 'result.support.single_source'
+  // v0.6.6: agent agreement is no longer rendered as multi-source support.
+  if (kind === 'multi_agent') return 'result.support.multi_agent'
+  if (kind === 'agent_restatement') return 'result.support.agent_restatement'
   if (kind === 'conflict') return 'result.support.conflict'
   return 'result.support.unsupported'
 }
 function supportClass(kind: string): string {
   if (kind === 'multi_source') return 'at-chip--info'
   if (kind === 'single_source') return 'at-chip--neutral'
+  if (kind === 'multi_agent') return 'at-chip--neutral'
+  if (kind === 'agent_restatement') return 'at-chip--warn'
   if (kind === 'conflict') return 'at-chip--warn'
   return 'at-chip--warn'
+}
+function supportLevelKey(level: string): string {
+  return 'result.level.' + (level || 'unknown')
+}
+function supportLevelClass(level: string): string {
+  if (level === 'source_text') return 'at-chip--info'
+  if (level === 'derived') return 'at-chip--neutral'
+  if (level === 'planning_assumption') return 'at-chip--neutral'
+  return 'at-chip--warn'
+}
+function citationClass(status: string): string {
+  if (status === 'unsupported' || status === 'source_unavailable') return 'at-chip--warn'
+  return 'at-chip--neutral'
 }
 const NATURE_KEYS: Record<string, string> = {
   source_fact: 'result.nature.source_fact',
@@ -491,10 +509,20 @@ function uncKey(k: string): string {
               <p class="at-t-base leading-relaxed at-fg">{{ item.statement }}</p>
               <div class="mt-2.5 flex flex-wrap items-center gap-2">
                 <span class="at-chip" :class="supportClass(item.support_kind)">{{ t(supportKey(item.support_kind)) }}</span>
+                <span v-if="item.support_level" class="at-chip" :class="supportLevelClass(item.support_level)">
+                  {{ t('result.support_level') }}: {{ t(supportLevelKey(item.support_level)) }}
+                </span>
                 <span v-if="hasNature(item.claim_type)" class="at-chip" :class="natureClass(item.claim_type)">
                   {{ t('result.data_nature') }}: {{ t(natureKey(item.claim_type)) }}
                 </span>
-                <span class="at-t-xs at-dim at-num">{{ item.evidence_ids.length }} {{ t('result.evidence_count') }} · {{ distinctSources(item.evidence_ids).length }} {{ t('result.source_count') }}</span>
+                <span v-if="item.review_status" class="at-chip" :class="citationClass(item.review_status)">
+                  {{ t('result.citation_check') }}: {{ item.review_status }}
+                </span>
+                <span class="at-t-xs at-dim at-num">
+                  {{ item.evidence_count ?? item.evidence_ids.length }} {{ t('result.evidence_count') }}
+                  · {{ item.independent_source_count ?? distinctSources(item.evidence_ids).length }} {{ t('result.source_count') }}
+                  <template v-if="item.agent_support_count"> · {{ item.agent_support_count }} {{ t('result.supporting_agents') }}</template>
+                </span>
                 <span v-if="item.supporting_agents.length" class="at-t-xs at-dim">{{ t('result.supporting_agents') }}: {{ item.supporting_agents.join(', ') }}</span>
               </div>
               <details v-if="item.evidence_ids.length || item.derivation || item.finding_id" class="mt-3">

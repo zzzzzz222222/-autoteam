@@ -210,3 +210,40 @@ runtime protocol was rewritten.
 
 None. All new schema fields are optional with safe defaults; historical
 artifacts and older API clients continue to parse.
+
+---
+
+## Hardening Pass Addendum (2026-10-03)
+
+> 分类：【真实运行】【实际测试】【静态审计】【设计推断】【未验证】【人工核验】
+
+本附录记录 v0.6.0 **发布前硬化收尾**的实际状态，覆盖上文"Verification (this release environment)"之外的增量工作。
+
+### 增量修复（本次硬化）【实际测试】
+- **R2 诚实判定（真阻断）**：`CompletionCriteria` 现纳入"真来源缺口"与"部分交付"，不再把缺来源/部分交付谎报为 SUCCESS（`app/runtime/session.py`）。
+- **R5 部分交付标记（真阻断）**：`_real_execution` 返回 5 元组并写入 `metadata["partial"]`；预算/迭代耗尽或"无交付却有工具调用"明确标 partial（`app/runtime/agent_runtime.py`）。
+- **R1 可观测性**：核心早已捕获 `response.usage`（已聚合）；本次修复**上报层**——新增 `validation/pricing.py`（价表 + `compute_cost`，未知/离线报 `None`），`collect.py` / `baseline.py` / `run_scenario.py` 诚实上报 usage 与成本（绝不臆测）。
+- **来源策略收紧**：`SOURCE_REQUIRED_INTENTS` 与 `CAPABILITY_TOOLS` 对齐，移除 `data_insights` 不一致项；`source_gaps_present` 仅在真未满足需求时降级。
+
+### 增量验证证据【实际测试】
+| 项 | 结果 |
+|----|------|
+| `pytest -q` | **481 passed, 7 skipped** |
+| `ruff check .` | clean |
+| `vue-tsc --noEmit` + `vite build` | pass (built ~1.6s) |
+| 离线 Scenario A / B E2E | 8/8、7/7 成功（verdict `not_real_llm`） |
+| 离线 Single-Agent Baseline | 跑通（cost unavailable 诚实） |
+| 安全 / 密钥扫描 | `.env` gitignored & 未跟踪；源码密钥签名 0 命中 |
+
+### 真实运行复核状态【BLOCKED】
+上文"Real E2E (actually executed)"为发布前 pre-publication pass 的**历史**真实证据，**本次硬化未重新执行真实运行**，原因双重且独立：
+1. 硬闸门 `REAL_EXECUTION_ENABLED = False`（发布前不变量）禁止开启；
+2. 配置的底层 LLM API 余额耗尽（HTTP 402），即便开启亦会中止。
+
+因此 R1 真实观测 / R2 真实工具调用 / R3 真实 Baseline / 稳定性复跑均标 **BLOCKED**；真实语义质量需真实运行 + 人工核验，标 **未验证**。
+
+### 发布决策【设计推断】
+**NO-GO / DEFERRED（本次不发布）**：离线质量/可靠性/安全达标，但真实运行证据缺失，未满足"验收后再发布"。本次**不执行** `git commit/tag/push/GitHub Release`，工作树保留供维护者复核。解锁门槛见 `validation/RELEASE_READINESS.md` §3。
+
+### 六份配套报告（validation/）
+`FINAL_HARDENING_REPORT.md` · `FINAL_VALIDATION_MATRIX.md` · `BASELINE_COMPARISON_REPORT.md` · `SEMANTIC_QUALITY_AUDIT.md` · `RELEASE_READINESS.md` · `AUDIT_MATRIX.md`（审计基础）。

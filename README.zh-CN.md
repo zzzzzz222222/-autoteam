@@ -4,8 +4,8 @@
 
 ### 自适应多智能体编排
 
-> ⚠️ **本中文说明暂未同步到 v0.6.0。** 最新的架构、能力、测试结果与限制请以
-> [README.md](README.md) 和 [RELEASE_NOTES_v0.6.0.md](RELEASE_NOTES_v0.6.0.md) 为准；
+> ⚠️ **本中文说明暂未同步到 v0.6.1。** 最新的架构、能力、测试结果与限制请以
+> [README.md](README.md) 和 [RELEASE_NOTES_v0.6.1.md](RELEASE_NOTES_v0.6.1.md) 为准；
 > 以下内容描述的是早期版本，可能已过时。
 
 > AutoTeam 动态组建智能体团队、生成经过校验的协作拓扑、异步执行、从故障中恢复，并评估拓扑行为。

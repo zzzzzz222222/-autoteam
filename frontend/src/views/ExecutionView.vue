@@ -157,6 +157,8 @@ function eventGlyph(type: string): 'tool' | 'artifact' | 'retry' | 'event' {
   switch (type) {
     case 'TOOL_CALLED':
       return 'tool'
+    case 'TOOL_DENIED': // v0.6.11: agent tried to use a tool it is not allowed to call
+      return 'retry'
     case 'ARTIFACT_CREATED':
     case 'AGENT_OUTPUT':
       return 'artifact'
@@ -184,6 +186,8 @@ function glyphLabel(event: ExecutionEvent): string {
   switch (event.type) {
     case 'TOOL_CALLED':
       return t(toolKindKey(event.metadata))
+    case 'TOOL_DENIED':
+      return t('act.tool_denied')
     case 'ARTIFACT_CREATED':
       return t('act.artifact')
     case 'AGENT_OUTPUT':

@@ -105,6 +105,15 @@ class Source(BaseModel):
     url: str = ""
     source_type: str = "offline_mock"  # "web" | "offline_mock" | "local_file"
     retrieved_at: str = ""
+    # v0.6.9 (F13): the identity basis the id was derived from (normalised URL,
+    # or the producing artifact for URL-less sources). Kept for audit so a
+    # reviewer can see *why* two records were treated as the same source.
+    identity: str = ""
+    # v0.6.6 (A9/A10): the observed fetch outcome travels with the source, so the
+    # report can say "could not be re-checked (HTTP 403)" instead of implying the
+    # page had no content, and a failed fetch can never be read as verified.
+    access_status: str = ""  # "" | ok | http_403 | http_000 | timeout | unavailable
+    access_note: str = ""
 
 
 class Evidence(BaseModel):
@@ -122,6 +131,12 @@ class Evidence(BaseModel):
     producer_agent: str = ""  # v0.6
     artifact_id: str = ""  # v0.6
     claim_type: str = ""  # v0.6 data nature (empty = unclassified; never guessed)
+    # v0.6.1 provenance audit: how this claim was bound to its source. Filled by
+    # deterministic matching only; empty means "no source could be matched".
+    match_score: float = 0.0
+    match_method: str = ""
+    # v0.6.1 provenance review state (never auto-promoted to "verified").
+    review_status: str = "not_checked"
 
 
 class ToolCall(BaseModel):

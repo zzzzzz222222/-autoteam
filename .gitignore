@@ -36,3 +36,9 @@ node_modules/
 
 # Demo artifact output
 autoteam_output/
+
+# Validation run artifacts: regenerable raw output of one run (metrics.json,
+# report.md, trace.json, evidence/sources ...). Kept locally for audit; the
+# committed validation/ tree keeps only the harness, scenarios and reports.
+# Nothing tracked today is removed by this rule (validation/runs/ is untracked).
+validation/runs/

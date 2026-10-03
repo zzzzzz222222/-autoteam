@@ -24,9 +24,9 @@ Task
 
 AutoTeam is an **experimental**, offline-safe, deterministic-by-default framework. Everything runs with **no API key and no network**; a real LLM and real web search are optional, plug-in capabilities.
 
-**Python 3.11+ · `pytest` 218/218 · `ruff` clean · `npm run build` pass · CI: Python 3.11 & 3.12**
+**Python 3.11+ · `pytest` 510 passed / 7 skipped · `ruff` clean · `npm run build` pass · CI: Python 3.11 & 3.12**
 
-Latest release notes: [RELEASE_NOTES_v0.6.0.md](RELEASE_NOTES_v0.6.0.md)
+Latest release notes: [RELEASE_NOTES_v0.6.1.md](RELEASE_NOTES_v0.6.1.md)
 
 ---
 
@@ -161,6 +161,7 @@ flowchart LR
 | v0.4.0 | Autonomous Task Completion (session, artifacts, context assembly, collaboration, assembler, retry/replan) |
 | v0.5.0 | Real-World Agent Execution (real/mock LLM, executable tools, Sources/Evidence, validation) |
 | v0.6.0 | Agent Team Synthesis (evidence filtering, cross-agent insights, contradictions/uncertainties, trade-offs, recommendations, `claim_type`, provenance audit, Result-page readability) |
+| v0.6.1 | Honesty & Reliability Hardening (source identity + claim support audit, evidence selection, structured-output failure classification, adaptive `length_limit` retry, token/usage/cost observability, real-E2E truth verdicts, executive-summary states, deterministic finding counts) |
 
 ## Killer Demo
 
@@ -261,6 +262,8 @@ AUTOTEAM_WEB_SEARCH_API_KEY=your_key
 ```
 
 > **Honest status:** Real LLM and Real Web Search adapters are **implemented**. Since the release preparation, the **Real LLM path has been actually verified** against a live DeepSeek-compatible endpoint and the **Real Web Search adapter verified against Tavily's live API** (see [Real LLM Verification](#real-llm-verification)). API keys are configured by the user only in a gitignored local `.env` — never committed. The offline fallback (structured `offline_mock` results, empty URLs) remains verified and degrades cleanly on any real-request failure. The real adapters are not exercised by CI or tests; if no key is present, `get_llm_provider()` returns the mock automatically and `web_search` stays offline.
+
+> **Hardening pass (2026-10-03) status — honest:** The offline quality/reliability/security hardening of v0.6.0 is **complete and green** (pytest 481 passed/7 skipped, ruff clean, frontend `vue-tsc`+`vite build` pass, offline Scenario A/B E2E pass, offline Single-Agent Baseline pass, deterministic semantic guards verified). **Real LLM / Web Search re-verification is BLOCKED in this pass**: the hard gate `REAL_EXECUTION_ENABLED` must stay `False` before release, and the configured API balance was exhausted (HTTP 402), so no new live run was executed. The live verifications cited below remain historical (pre-publication pass) evidence, not re-confirmed in this pass. **Release decision: NO-GO / deferred** — see `validation/RELEASE_READINESS.md`.
 
 ## Real LLM Verification
 

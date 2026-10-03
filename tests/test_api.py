@@ -13,6 +13,7 @@ import time
 from fastapi.testclient import TestClient
 
 from app.api.main import app
+from app.synthesis.models import SUPPORT_KINDS, SUPPORT_LEVELS
 
 client = TestClient(app)
 
@@ -104,7 +105,12 @@ def test_full_run_end_to_end():
     assert result["synthesis_status"] in {"completed", "degraded", "failed"}
     for finding in result["findings"]:
         assert finding["finding_id"]
-        assert finding["support_kind"] in {"multi_source", "single_source", "unsupported"}
+        # v0.6.6: the vocabulary now separates agent agreement from independent
+        # sources, so the assertion is against the schema constant (not a
+        # hand-written subset that would silently accept a wrong value).
+        assert finding["support_kind"] in SUPPORT_KINDS
+        assert finding["support_level"] in SUPPORT_LEVELS
+        assert finding["review_status"] != "verified"  # never auto-verified
 
 
 def test_sse_stream_emits_events():
@@ -151,8 +157,13 @@ def test_artifacts_contain_provenance():
         for source in artifact["source_records"]:
             assert source["url"] == ""  # never fabricated
             assert source["source_type"] in ("offline_mock", "web")
+        source_ids = {source["id"] for source in artifact["source_records"]}
         for evidence in artifact["evidence"]:
-            assert evidence["source_id"]
+            if evidence["source_id"]:
+                assert evidence["source_id"] in source_ids
+                assert evidence.get("review_status") != "verified"
+            else:
+                assert evidence.get("review_status") == "unsupported"
 
 
 def test_result_matches_final_artifact():

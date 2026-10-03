@@ -348,14 +348,21 @@ def test_tool_calling_loop_executes_and_finishes(monkeypatch):
         task="设计一个 FastAPI 电商后端系统",
         expected_output="architecture_design",
     )
-    deliverable, sources, evidence, used = runtime._real_execution(
+    deliverable, sources, evidence, used, _partial = runtime._real_execution(
         _fake_agent("System Architect"), context, _fake_task("设计一个 FastAPI 电商后端系统")
     )
     assert used == ["web_search"]
     assert deliverable.structured_data == {"backend_plan": "fastapi_router_service_layout"}
     assert len(sources) == 3  # offline stub search results became provenance
     assert all(source.source_type == "offline_mock" for source in sources)
-    assert evidence and all(ev.source_id in {s.id for s in sources} for ev in evidence)
+    source_ids = {s.id for s in sources}
+    assert evidence
+    for ev in evidence:
+        if ev.source_id:
+            assert ev.source_id in source_ids  # no link to an unknown source
+            assert ev.review_status != "verified"  # a link is not a verification
+        else:
+            assert ev.review_status == "unsupported"  # honest unbound claim
 
 
 def _fake_agent(name: str):
@@ -391,7 +398,7 @@ def test_tool_calling_respects_max_tool_calls(monkeypatch):
     context = AgentExecutionContext(
         agent_id="a", role_name="A", task="t", expected_output="market_overview"
     )
-    deliverable, sources, _evidence, used = runtime._real_execution(
+    deliverable, sources, _evidence, used, _partial = runtime._real_execution(
         _fake_agent("A"), context, _fake_task("t")
     )
     assert len(used) == 2  # budget enforced
@@ -408,17 +415,27 @@ def test_tool_calling_unknown_tool_is_structured_error(monkeypatch):
             _decision("finish", deliverable=_finish_deliverable()),
         ]
     )
-    runtime = AgentRuntime(provider=provider, tool_registry=ToolRegistry(mode="auto"))
+    from app.runtime.events import ExecutionTrace
+
+    runtime = AgentRuntime(
+        provider=provider,
+        tool_registry=ToolRegistry(mode="auto"),
+        trace=ExecutionTrace("run_unknown_tool"),
+    )
     from app.runtime.context import AgentExecutionContext
 
     context = AgentExecutionContext(
         agent_id="a", role_name="A", task="t", expected_output="market_overview"
     )
-    deliverable, _sources, _evidence, used = runtime._real_execution(
+    deliverable, _sources, _evidence, used, _partial = runtime._real_execution(
         _fake_agent("A"), context, _fake_task("t")
     )
-    assert used == ["no_such_tool"]
+    # v0.6.11 (P610-2): an unknown tool is rejected before execution, so it is
+    # never reported as "used" - it is audited as a denial instead.
+    assert used == []
     assert deliverable.structured_data  # the run continues despite the bad call
+    denials = [e for e in runtime.trace.events if e.type == "TOOL_DENIED"]
+    assert denials and denials[0].metadata["denial_reason"] == "unknown_tool"
 
 
 def test_tool_calling_invalid_arguments_become_structured_errors():
@@ -459,7 +476,7 @@ def test_finish_without_deliverable_but_with_tools_is_partial(monkeypatch):
     context = AgentExecutionContext(
         agent_id="a", role_name="A", task="t", expected_output="market_overview"
     )
-    deliverable, _sources, _evidence, used = runtime._real_execution(
+    deliverable, _sources, _evidence, used, _partial = runtime._real_execution(
         _fake_agent("A"), context, _fake_task("t")
     )
     assert used == ["web_search"]

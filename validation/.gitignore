@@ -1,0 +1,22 @@
+# Validation raw outputs — never commit these by default.
+#
+# They contain real task text, traces, and (in real mode) live web source URLs.
+# Only the tooling, scenarios, README and REPORT belong in the repository.
+runs/**
+!runs/.gitkeep
+
+# Raw scraped page content / caches
+raw_pages/
+cache/
+tmp/
+debug/
+*.tmp
+
+# Machine data / logs
+*.jsonl
+*.log
+
+# Credentials — never store any in this tree
+.env
+.env.*
+!*.env.example

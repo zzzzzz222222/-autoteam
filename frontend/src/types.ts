@@ -54,6 +54,13 @@ export interface FindingDto {
   notes?: string
   claim_type?: string
   derivation?: string
+  // v0.6.6: agent agreement vs independent sources, plus the citation check.
+  support_level?: string
+  evidence_count?: number
+  agent_support_count?: number
+  independent_source_count?: number
+  review_status?: string
+  unsupported_parts?: string[]
 }
 
 export interface InsightDto {
