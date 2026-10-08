@@ -24,6 +24,21 @@ SCHEMA_VERSION = "1"
 
 TOOL_KINDS = ("web", "local", "offline_mock", "offline_fallback")
 
+# v0.6.2 (AT-AUDIT-004 follow-up): the strict per-claim citation verdict has to
+# survive the round trip ``live Finding -> synthesis.json -> offline reload``.
+# These are the **existing keys** ``audit_claim_support`` already puts on
+# ``Finding.support_audit`` — a projection, deliberately not a second support
+# model. Enough to re-derive ``citation_verified``; the full audit (``checks`` /
+# ``witnesses`` / ``uncited_candidates``) keeps living in ``claim_audit`` (and
+# in full in ``synthesis_audit.json``) so this file stays readable.
+FINDING_AUDIT_FIELDS = (
+    "status",
+    "numeric_check",
+    "numbers_supported",
+    "numbers_missing",
+    "scope_flags",
+)
+
 # Metrics the current core cannot produce reliably. Kept explicit so the
 # report never implies we measured something we did not.
 UNAVAILABLE_METRICS: dict[str, str] = {
@@ -356,6 +371,59 @@ def _dump_items(items: Any, fields: tuple[str, ...]) -> list[dict[str, Any]]:
     return rows
 
 
+def dump_finding_audit(item: Any) -> dict[str, Any]:
+    """Project ``Finding.support_audit`` into a JSON-safe, redacted row.
+
+    Missing audits stay **missing**: ``available`` is reported instead of being
+    quietly turned into a passing verdict. Redaction mirrors ``_dump_items``.
+    """
+    audit = getattr(item, "support_audit", None) or {}
+    if not audit:
+        # Older runs simply never carried one. Say so — never imply "verified".
+        return {"available": False}
+    row: dict[str, Any] = {"available": True}
+    for key in FINDING_AUDIT_FIELDS:
+        if key not in audit:
+            continue
+        value = audit[key]
+        if isinstance(value, list):
+            row[key] = [
+                redact_text(entry, limit=200) if isinstance(entry, str) else entry
+                for entry in value
+            ]
+        elif isinstance(value, str):
+            row[key] = redact_text(value, limit=200)
+        else:
+            row[key] = value
+    return row
+
+
+def restore_finding_audit(
+    row: dict[str, Any], claim_audit: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """Rebuild a ``Finding.support_audit`` payload from a persisted row.
+
+    Offline readers use this to re-run ``compute_finding_counts`` on a stored
+    run and get the **same** ``citation_verified`` the live run had. New rows
+    carry the projection; rows written before v0.6.2 fall back to the
+    ``claim_audit`` list (which always stored the full audit keyed by
+    ``finding_id``). When neither exists the audit is empty — and therefore
+    counts as *not* citation-verified, never as verified.
+    """
+    embedded = row.get("support_audit")
+    if isinstance(embedded, dict) and embedded.get("available"):
+        return {key: value for key, value in embedded.items() if key != "available"}
+    finding_id = row.get("finding_id")
+    for entry in claim_audit or []:
+        if isinstance(entry, dict) and entry.get("finding_id") == finding_id:
+            return {
+                key: value
+                for key, value in entry.items()
+                if key in FINDING_AUDIT_FIELDS
+            }
+    return {}
+
+
 def parse_dedup_audit(notes: str) -> dict[str, Any]:
     """Extract the deterministic finding-dedup audit appended to synthesis notes."""
     marker = "dedup: "
@@ -418,6 +486,19 @@ def _synthesis(session: Any, events: list[Any]) -> dict[str, Any]:
             + failed_events,
         }
     result = getattr(bundle, "synthesis", None)
+    key_findings = list(getattr(result, "key_findings", []) or [])
+    finding_rows = _dump_items(
+        key_findings,
+        ("finding_id", "statement", "evidence_ids", "supporting_agents",
+         "support_kind", "claim_type", "notes", "derivation",
+         # v0.6.6: agent vs independent-source counts + citation check.
+         "support_level", "evidence_count", "agent_support_count",
+         "independent_source_count", "review_status", "unsupported_parts"),
+    )
+    # v0.6.2: keep the per-claim citation verdict next to each finding so the
+    # offline reload can re-derive ``citation_verified`` exactly.
+    for row, item in zip(finding_rows, key_findings):
+        row["support_audit"] = dump_finding_audit(item)
     counts = {
         "key_findings": len(getattr(result, "key_findings", []) or []),
         # Legacy LLM-proposed lists, kept verbatim for compatibility. They are
@@ -461,14 +542,7 @@ def _synthesis(session: Any, events: list[Any]) -> dict[str, Any]:
         "source_conflicts": list(getattr(bundle, "source_conflicts", []) or []),
         "dedup": dedup_audit,
         "dedup_audit": dedup_audit,
-        "findings": _dump_items(
-            getattr(result, "key_findings", []),
-            ("finding_id", "statement", "evidence_ids", "supporting_agents",
-             "support_kind", "claim_type", "notes", "derivation",
-             # v0.6.6: agent vs independent-source counts + citation check.
-             "support_level", "evidence_count", "agent_support_count",
-             "independent_source_count", "review_status", "unsupported_parts"),
-        ),
+        "findings": finding_rows,
         "insights": _dump_items(
             getattr(result, "cross_agent_insights", []),
             ("insight_id", "statement", "supporting_evidence_ids",

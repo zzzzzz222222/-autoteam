@@ -11,11 +11,34 @@ class ReplanResult(BaseModel):
     skipped_agents: list[str] = Field(default_factory=list)
 
 
+def topology_signature(topology: Topology) -> str:
+    """Stable one-line description of a plan, used to detect an effective change.
+
+    Two plans with the same signature are the same plan: agents, root and edges
+    all match. Comparing signatures is what separates "the Replanner ran" from
+    "the Replanner actually changed something".
+    """
+    edges = ",".join(f"{edge.source}->{edge.target}" for edge in topology.edges)
+    agents = ",".join(topology.agents)
+    root = topology.root_agent or "-"
+    return f"agents={agents};root={root};edges={edges or '-'}"
+
+
 class ReplanEvent(BaseModel):
     failed_agent_id: str
     reason: str
     previous_topology: str | None = None
     new_topology: str | None = None
+    # v0.6.2 (AT-AUDIT-003): the single source of truth for "a replan happened".
+    #
+    # ``False`` means the Replanner ran but no plan change reached the scheduler
+    # (no-op, an equivalent candidate, an invalid candidate, or a change this
+    # scheduler cannot safely apply). Callers must not report such an outcome as
+    # a successful replan.
+    applied: bool = False
+    # Why a candidate was not applied. Empty when ``applied`` is True, so a
+    # refusal is never silently dropped.
+    detail: str = ""
 
 
 class Replanner:

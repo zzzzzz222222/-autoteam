@@ -826,6 +826,8 @@ class AgentRuntime:
                 event="start",
                 timestamp=time.time(),
                 message=f"{role_name} started",
+                # AT-AUDIT-002: every event must declare its owning run.
+                run_id=self.run_id,
             )
         )
         try:
@@ -897,6 +899,7 @@ class AgentRuntime:
                     event="done",
                     timestamp=time.time(),
                     message=f"{role_name} completed",
+                    run_id=self.run_id,
                 )
             )
             return output
@@ -908,6 +911,7 @@ class AgentRuntime:
                     event="error",
                     timestamp=time.time(),
                     message=friendly,
+                    run_id=self.run_id,
                 )
             )
             if self.trace is not None:

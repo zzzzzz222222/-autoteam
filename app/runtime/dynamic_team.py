@@ -93,6 +93,7 @@ async def run_dynamic_team(
     provider: LLMProvider | None = None,
     tool_mode: str = "auto",
     store: ResultStore | None = None,
+    max_concurrency: int | None = None,
 ) -> dict[str, AgentResult]:
     """Execute an ExecutionPlan with the existing scheduler and runtime."""
     runtime = AgentRuntime(
@@ -111,7 +112,9 @@ async def run_dynamic_team(
             plan.topology,
         )
     scheduler = AsyncDAGScheduler(
-        executor=runtime, retry_policy=RetryPolicy(max_retries=1)
+        executor=runtime,
+        max_concurrency=max_concurrency,
+        retry_policy=RetryPolicy(max_retries=1),
     )
     return await scheduler.run(Task(description=plan.task), plan.topology, plan.agents)
 

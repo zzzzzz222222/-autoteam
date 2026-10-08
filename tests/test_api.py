@@ -34,7 +34,7 @@ def test_health():
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["version"] == "0.6.0"
+    assert body["version"] == app.version  # B1: health must report the real release version
 
 
 def test_create_task_returns_real_id():
@@ -205,3 +205,91 @@ def test_api_never_leaks_search_key():
             assert "sk-super-secret-98765" not in dumped
     finally:
         os.environ.pop("AUTOTEAM_WEB_SEARCH_API_KEY", None)
+
+
+def test_sse_stream_no_event_loss_on_concurrent_append():
+    """B2: the SSE cursor must not skip events the background thread appended
+    between the two lock acquisitions in ``stream_events``.
+
+    The fake handle simulates the race deterministically: the first ``events()``
+    read returns one fewer than ``event_count()`` (an event landed in the gap),
+    exactly the window that the old ``last = handle.event_count()`` cursor would
+    drop. With the fix (``last = last + len(events)``) every event is delivered.
+    """
+    from app.api.routes import registry
+
+    events = [
+        {
+            "event_id": f"evt_{i:04d}",
+            "run_id": "r",
+            "timestamp": 0.0,
+            "type": "TOOL_CALLED",
+            "agent_id": "",
+            "message": "",
+            "metadata": {},
+        }
+        for i in range(3)
+    ]
+
+    class FakeHandle:
+        def __init__(self, evs):
+            self._evs = evs
+            self._first = True
+
+        def events(self, after=0):
+            n = len(self._evs) if not self._first else len(self._evs) - 1
+            self._first = False
+            return list(self._evs[after:n])
+
+        def event_count(self):
+            return len(self._evs)
+
+        @property
+        def done(self):
+            return True
+
+    task_id = "task_sse_loss"
+    registry._runs[task_id] = FakeHandle(events)
+    try:
+        with client.stream("GET", f"/api/tasks/{task_id}/stream") as response:
+            assert response.status_code == 200
+            body = b"".join(response.iter_bytes())
+    finally:
+        registry._runs.pop(task_id, None)
+
+    text = body.decode("utf-8", errors="replace")
+    for i in range(3):
+        assert f"evt_{i:04d}" in text, f"SSE stream dropped event {i}"
+
+
+def test_partial_agent_exposed_in_snapshot():
+    """B3: an agent that delivered a *partial* artifact must be reported as
+    partial (not a full success) in the API snapshot, so the per-agent status is
+    consistent with the actual artifact delivery."""
+    import types
+
+    from app.api.runs import RunHandle
+    from app.scheduler.models import AgentResult, ExecutionStatus
+
+    class StubSession:
+        run_id = "run_x"
+        status = ExecutionStatus.SUCCESS
+        started_at = 1.0
+        finished_at = 2.0
+        plan = None
+        final_artifact = None
+        partial_agent_ids = {"agent_p"}
+        trace = types.SimpleNamespace(events=[])
+        agent_results = {
+            "agent_p": AgentResult(agent_id="agent_p", status=ExecutionStatus.SUCCESS),
+            "agent_f": AgentResult(agent_id="agent_f", status=ExecutionStatus.SUCCESS),
+        }
+
+        def agent_names(self):
+            return {}
+
+    handle = RunHandle(task_id="task_x", task="t", mode="real", created_at=0.0)
+    handle.session = StubSession()
+    snap = handle.snapshot()
+    assert snap["agent_results"]["agent_p"]["partial"] is True
+    assert snap["agent_results"]["agent_f"]["partial"] is False

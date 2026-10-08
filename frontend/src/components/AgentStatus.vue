@@ -19,6 +19,8 @@ const meta = computed(() => {
   switch (props.status as S) {
     case 'success':
       return { icon: 'check' as const, cls: 'at-success-text', running: false, key: 'agentstatus.completed' }
+    case 'partial':
+      return { icon: 'alertTriangle' as const, cls: 'at-warn-text', running: false, key: 'agentstatus.partial' }
     case 'running':
       return { icon: 'dot' as const, cls: 'at-info', running: true, key: 'agentstatus.running' }
     case 'retry':

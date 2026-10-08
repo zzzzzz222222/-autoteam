@@ -64,12 +64,17 @@ class RunHandle:
                 {"source": edge.source, "target": edge.target}
                 for edge in (plan.dependencies if plan is not None else [])
             ]
+            partial_agent_ids = getattr(session, "partial_agent_ids", set()) or set()
             agent_results = {
                 agent_id: {
                     "status": result.status.value,
                     "attempt": result.attempt,
                     "error": result.error,
                     "duration": result.duration,
+                    # B3: surface partial delivery so the per-agent status is
+                    # consistent with the actual artifact (a partial deliverable
+                    # must not read as a full success in the UI).
+                    "partial": agent_id in partial_agent_ids,
                 }
                 for agent_id, result in session.agent_results.items()
             }

@@ -89,7 +89,8 @@ export const useTeamStore = defineStore('team', () => {
         continue
       }
       if (result.status === 'success') {
-        map[agentId] = 'success'
+        // B3: a partial deliverable must not read as a full success in the UI.
+        map[agentId] = result.partial ? 'partial' : 'success'
       } else if (result.status === 'running') {
         map[agentId] = 'running'
       } else if (result.status === 'failed') {

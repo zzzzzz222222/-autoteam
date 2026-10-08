@@ -633,8 +633,24 @@ def _attempt_hint(attempt: int, last_category: str) -> str:
 # lists that the model routinely leaves empty, so counting them reported 0 next
 # to 14 real findings. The breakdown below is derived in CODE from the real
 # finding state + evidence bindings, so it can never drift from the data.
-SUPPORTED_LEVELS = frozenset({"source_text", "agent_consensus", "derived"})
+# v0.6.2 (AT-AUDIT-004): ``supported`` means backed by EXTERNAL evidence.
+#
+# ``agent_consensus`` (several agents agree, no source snippet) and ``derived``
+# (a model-side estimate from traceable inputs) are real backing, but neither is
+# external evidence: nobody outside the run said it. Counting them as
+# ``supported`` made a headline read "90% supported" while the strict per-claim
+# citation audit only confirmed 20%. They now land on their own keys so a
+# headline number can never silently absorb them.
+SUPPORTED_LEVELS = frozenset({"source_text"})
+# Internal backing: real, but not "a source said it". Counted separately and
+# also reported as ``unverified`` on the evidence axis.
+INTERNAL_BACKING_LEVELS = frozenset({"agent_consensus", "derived"})
 UNSUPPORTED_REVIEW = frozenset({"unsupported"})
+# Strict per-claim verdict from ``audit_claim_support``: numeric / unit / year
+# matching against the cited snippets only. Never a semantic judgement, never
+# an LLM vote — so it is reported as its own axis and never merged into
+# ``supported``.
+CITATION_VERIFIED_STATUS = "supported_by_citation"
 
 
 def compute_finding_counts(
@@ -642,21 +658,38 @@ def compute_finding_counts(
 ) -> dict[str, int]:
     """Classify findings deterministically (never filled by the LLM).
 
+    Two axes, never merged:
+
     * ``total``                 every finding synthesis produced
     * ``with_valid_evidence``   >=1 ``evidence_id`` resolvable in the evidence set
-    * ``supported``             bound evidence AND a support level that counts as
-                                backing (source text, agent consensus or derived)
+    * ``supported``             **external** backing: ``support_level ==
+                                "source_text"`` and not reviewed unsupported.
+                                Agent agreement and model estimates are NOT here
+    * ``backed_count``          any backing tier (source text, agent consensus,
+                                derived) that was not reviewed unsupported — kept
+                                so the historical series stays inspectable
+    * ``citation_verified``     the strict per-claim citation audit says
+                                ``supported_by_citation`` (numeric / unit / year
+                                match against the cited snippets)
     * ``multi_source``          ``independent_source_count`` >= 2
     * ``single_source``         exactly 1 independent source
-    * ``unverified``            bound evidence, but only a planning assumption /
-                                unknown tier, or explicitly reviewed unsupported
+    * ``agent_consensus``       backed only by agreeing agents (no source)
+    * ``derived``               backed only by a model-side derivation
+    * ``unverified``            bound evidence that did not reach external
+                                backing (also counts the two internal tiers)
     * ``unsupported``           no resolvable evidence at all (dangling refs)
+
+    Invariant: ``with_valid_evidence == supported + unverified``.
     """
     total = 0
     with_valid_evidence = 0
     supported = 0
+    backed_count = 0
+    citation_verified = 0
     multi_source = 0
     single_source = 0
+    agent_consensus = 0
+    derived = 0
     unverified = 0
     unsupported = 0
     for finding in findings or []:
@@ -688,14 +721,32 @@ def compute_finding_counts(
             continue
         if level in SUPPORTED_LEVELS:
             supported += 1
+            backed_count += 1
+        elif level in INTERNAL_BACKING_LEVELS:
+            # AT-AUDIT-004: agreement between agents and model-side estimates are
+            # real backing, but they are not a source. They are counted on their
+            # own keys and stay out of the ``supported`` headline.
+            if level == "agent_consensus":
+                agent_consensus += 1
+            else:
+                derived += 1
+            backed_count += 1
+            unverified += 1
         else:
             unverified += 1
+        audit = getattr(finding, "support_audit", None) or {}
+        if str(audit.get("status", "") or "").strip().lower() == CITATION_VERIFIED_STATUS:
+            citation_verified += 1
     return {
         "total": total,
         "with_valid_evidence": with_valid_evidence,
         "supported": supported,
+        "backed_count": backed_count,
+        "citation_verified": citation_verified,
         "multi_source": multi_source,
         "single_source": single_source,
+        "agent_consensus": agent_consensus,
+        "derived": derived,
         "unverified": unverified,
         "unsupported": unsupported,
     }

@@ -320,8 +320,12 @@ def test_retry_integration_recovers_the_run():
 
 def test_replan_integration_skips_downstream():
     session = execute_task(TASK_SOFTWARE, fail_agent_ids={"database_engineer"})
-    replanned = session.trace.of_type("AGENT_REPLANNED")
-    assert [event.agent_id for event in replanned] == ["database_engineer"]
+    # AT-AUDIT-003: the deterministic Replanner has no viable recovery plan, so
+    # it is a no-op — a no-op must not be reported as a successful replan.
+    assert session.trace.of_type("AGENT_REPLANNED") == []
+    # The failure itself stays observable: the engine still records it.
+    failed = session.trace.of_type("AGENT_FAILED")
+    assert {event.agent_id for event in failed} == {"database_engineer"}
     assert session.agent_results["backend_developer"].status.value == "skipped"
     # partial artifacts still assemble into a readable final deliverable
     assert session.final_artifact is not None

@@ -18,7 +18,7 @@ const messages: Record<Locale, Record<string, string>> = {
     // app shell
     'app.name': 'AutoTeam',
     'app.tagline': '动态多智能体执行',
-    'app.version': 'v0.6.0',
+    'app.version': 'v0.6.2',
     'a11y.skip': '跳到主要内容',
     'common.request_failed': '请求失败',
     'common.error_network': '无法连接后端服务，请确认服务已启动。',
@@ -64,6 +64,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'agentstatus.failed': '失败',
     'agentstatus.ready': '就绪',
     'agentstatus.skipped': '已跳过',
+    'agentstatus.partial': '部分交付',
     'agentstatus.pending': '等待中',
     'runstatus.success': '成功',
     'runstatus.running': '运行中',
@@ -341,7 +342,7 @@ const messages: Record<Locale, Record<string, string>> = {
     // app shell
     'app.name': 'AutoTeam',
     'app.tagline': 'Dynamic multi-agent execution',
-    'app.version': 'v0.6.0',
+    'app.version': 'v0.6.2',
     'a11y.skip': 'Skip to main content',
     'common.request_failed': 'Request failed',
     'common.error_network': 'Could not reach the backend service — is it running?',
@@ -387,6 +388,7 @@ const messages: Record<Locale, Record<string, string>> = {
     'agentstatus.failed': 'failed',
     'agentstatus.ready': 'ready',
     'agentstatus.skipped': 'skipped',
+    'agentstatus.partial': 'partial',
     'agentstatus.pending': 'pending',
     'runstatus.success': 'SUCCESS',
     'runstatus.running': 'RUNNING',

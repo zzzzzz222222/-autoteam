@@ -6,7 +6,7 @@ from app.models.task import Task
 from app.models.topology import Topology
 from app.scheduler.executor import AgentExecutor
 from app.scheduler.models import AgentResult, ExecutionAttempt, ExecutionContext, ExecutionStatus
-from app.scheduler.replan import ReplanEvent, Replanner
+from app.scheduler.replan import ReplanEvent, Replanner, ReplanResult, topology_signature
 from app.scheduler.retry import RetryPolicy
 from app.topology.validator import TopologyValidator
 
@@ -20,8 +20,17 @@ class AsyncDAGScheduler:
         retry_policy: RetryPolicy | None = None,
         replanner: Replanner | None = None,
     ) -> None:
-        if max_concurrency is not None and max_concurrency < 1:
-            raise ValueError("max_concurrency must be at least 1.")
+        # AT-AUDIT-001: the cap is only meaningful as a positive integer. A float
+        # such as 1.5 silently broke it in the past — ``asyncio.Semaphore`` only
+        # blocks while its internal value compares equal to 0, so a fractional
+        # value decrements past zero forever and never gates anything.
+        if max_concurrency is not None:
+            if isinstance(max_concurrency, bool) or not isinstance(max_concurrency, int):
+                raise TypeError(
+                    f"max_concurrency must be a positive integer or None, got {max_concurrency!r}."
+                )
+            if max_concurrency < 1:
+                raise ValueError("max_concurrency must be at least 1.")
         self.executor = executor
         self.max_concurrency = max_concurrency
         self.timeout = timeout
@@ -41,7 +50,9 @@ class AsyncDAGScheduler:
         statuses = {agent_id: ExecutionStatus.PENDING for agent_id in topology.agents}
         results: dict[str, AgentResult] = {}
         context = ExecutionContext(task, topology, agent_map, results)
-        semaphore = asyncio.Semaphore(self.max_concurrency) if self.max_concurrency else None
+        semaphore = (
+            asyncio.Semaphore(self.max_concurrency) if self.max_concurrency is not None else None
+        )
 
         while any(status is ExecutionStatus.PENDING for status in statuses.values()):
             for agent_id, status in list(statuses.items()):
@@ -80,12 +91,65 @@ class AsyncDAGScheduler:
                 results[result.agent_id] = result
                 if result.status is ExecutionStatus.FAILED:
                     recovery = self.replanner.replan(topology, result.agent_id, results)
+                    previous = topology_signature(topology)
+                    applied, new, detail = self._apply_replan(topology, recovery)
+                    if applied and recovery.topology is not None:
+                        # AT-AUDIT-005: hand the candidate to the structures the
+                        # loop actually schedules from. This point is only reached
+                        # after ``asyncio.gather`` settled the whole wave, so no
+                        # agent is in flight and no execution context is disturbed.
+                        # ``statuses`` is deliberately left alone: finished agents
+                        # are never rerun and pending agents simply get re-decided
+                        # against the new edges on the next pass.
+                        topology = recovery.topology
+                        predecessors = {
+                            agent_id: {
+                                edge.source
+                                for edge in topology.edges
+                                if edge.target == agent_id
+                            }
+                            for agent_id in topology.agents
+                        }
+                        context.topology = topology
                     self.replan_events.append(
-                        ReplanEvent(failed_agent_id=result.agent_id, reason=recovery.reason)
+                        ReplanEvent(
+                            failed_agent_id=result.agent_id,
+                            reason=recovery.reason,
+                            previous_topology=previous if applied else None,
+                            new_topology=new if applied else None,
+                            applied=applied,
+                            detail=detail,
+                        )
                     )
-                    if recovery.replanned and recovery.topology is not None:
-                        TopologyValidator().validate(recovery.topology)
         return results
+
+    def _apply_replan(
+        self, topology: Topology, recovery: ReplanResult
+    ) -> tuple[bool, str | None, str]:
+        """Decide whether ``recovery`` can become the plan the loop executes.
+
+        Returns ``(applied, new_signature, detail)``. ``detail`` carries the
+        reason for a refusal so an unsupported candidate is never silently
+        dropped. Validation reuses the project's own validator — no second,
+        parallel set of rules.
+        """
+        if not recovery.replanned or recovery.topology is None:
+            return False, None, "replanner produced no candidate plan"
+        candidate = recovery.topology
+        # Existing gate: schema + DAG validation. An invalid candidate still
+        # raises here, which is the behaviour this project already had.
+        TopologyValidator().validate(candidate)
+        new = topology_signature(candidate)
+        if new == topology_signature(topology):
+            return False, None, "candidate is identical to the running plan"
+        # One AgentSpec exists per planned node. A candidate that adds or removes
+        # nodes cannot be executed (no spec for a new node, and a removed node
+        # would stay PENDING forever), so it is refused rather than half-applied.
+        if set(candidate.agents) != set(topology.agents):
+            return False, None, (
+                "candidate changes the agent set, which this scheduler cannot execute"
+            )
+        return True, new, ""
 
     @staticmethod
     def _validate_agents(topology: Topology, agents: list[AgentSpec]) -> dict[str, AgentSpec]:

@@ -26,7 +26,7 @@ from app.api.runs import RunRegistry
 router = APIRouter(prefix="/api", tags=["autoteam"])
 registry = RunRegistry()
 
-VERSION = "0.6.0"
+VERSION = "0.6.1"
 
 
 def _serialize_event(event: dict[str, Any]) -> str:
@@ -95,6 +95,8 @@ def get_team(task_id: str) -> TeamResponse:
                     "layer": layer_of.get(agent_id, 0),
                     "status": result.get("status", "pending"),
                     "attempt": result.get("attempt", 1),
+                    # B3: surface partial delivery for consistent UI rendering.
+                    "partial": bool(result.get("partial", False)),
                 }
             )
     return TeamResponse(
@@ -188,12 +190,17 @@ async def stream_events(task_id: str):
             events = handle.events(last)
             for event in events:
                 yield _serialize_event(event)
-            last = handle.event_count()
+            # Advance the cursor by the number of events *actually yielded*
+            # this iteration, never by a re-read of the live count. Re-reading
+            # ``event_count()`` here races with the background thread: events
+            # appended between the two lock acquisitions would be skipped,
+            # dropping live SSE frames (B2).
+            last = last + len(events)
             if handle.done and last >= handle.event_count():
                 # final heartbeat then close
                 yield f"event: done\ndata: {json.dumps({'task_id': task_id, 'done': True})}\n\n"
                 return
-            await asyncio.sleep(0.25)
+        await asyncio.sleep(0.25)
 
     return StreamingResponse(
         generate(),

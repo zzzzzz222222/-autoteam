@@ -8,6 +8,7 @@ aggregation are new, so retry / replan / evaluation from v0.1.0 apply unchanged.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -40,19 +41,38 @@ class ResearchOrchestrator:
         store: ResultStore | None = None,
         fail_agent_ids: set[str] | None = None,
         failures_before_success: dict[str, int] | None = None,
+        max_concurrency: int | None = None,
     ) -> None:
+        # AT-AUDIT-001: accepted here and handed to the scheduler in ``run`` so
+        # the configured cap governs this pipeline too instead of being dropped.
+        self.max_concurrency = max_concurrency
         self.provider = provider or get_llm_provider()
         self.tool_registry = ToolRegistry(mode=tool_mode)
         self.store = store or ResultStore()
-        self.runtime = AgentRuntime(
-            provider=self.provider,
-            tool_registry=self.tool_registry,
-            store=self.store,
-            fail_agent_ids=fail_agent_ids,
-            failures_before_success=failures_before_success,
-        )
+        # AT-AUDIT-002: keep the constructor arguments so every run can get its
+        # own runtime carrying that run's id. Mutating a single shared runtime's
+        # ``run_id`` would be global mutable state, which interleaved runs could
+        # overwrite and which is exactly the class of bug being fixed here.
+        self._runtime_kwargs: dict[str, object] = {
+            "provider": self.provider,
+            "tool_registry": self.tool_registry,
+            "store": self.store,
+            "fail_agent_ids": fail_agent_ids,
+            "failures_before_success": failures_before_success,
+        }
+        self.runtime = AgentRuntime(**self._runtime_kwargs)
+
+    def _runtime_for(self, run_id: str) -> AgentRuntime:
+        """A runtime bound to one specific run (same config, tagged run id)."""
+        kwargs = dict(self._runtime_kwargs)
+        kwargs["run_id"] = run_id
+        return AgentRuntime(**kwargs)
 
     async def run(self, task_description: str, task_context: str | None = None) -> ResearchReport:
+        # AT-AUDIT-002: this execution owns a fresh run id, so its events and
+        # results can never be read back as part of a previous run's state.
+        run_id = self.store.start_run(f"run_{uuid.uuid4().hex[:8]}")
+        runtime = self._runtime_for(run_id)
         task = Task(description=task_description, context=task_context)
         plan = TaskDecomposer(self.provider).decompose(task)
         agents = build_team(plan)
@@ -60,10 +80,12 @@ class ResearchOrchestrator:
         self.store.set_structure(plan, agents, topology)
 
         scheduler = AsyncDAGScheduler(
-            executor=self.runtime, retry_policy=RetryPolicy(max_retries=1)
+            executor=runtime,
+            max_concurrency=self.max_concurrency,
+            retry_policy=RetryPolicy(max_retries=1),
         )
         results = await scheduler.run(task, topology, agents)
-        self.store.set_results(results)
+        self.store.set_results(results, run_id=run_id)
         report = build_report(task, plan, agents, results)
         self.store.set_report(report)
         return report

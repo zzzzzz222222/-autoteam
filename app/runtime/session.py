@@ -97,6 +97,7 @@ class TaskExecutionSession:
         self.artifacts: list[AgentArtifact] = []
         self.final_artifact: FinalArtifact | None = None
         self.synthesis_bundle: object | None = None  # ReportBundle | None (v0.6)
+        self.partial_agent_ids: set[str] = set()  # agents that delivered a partial artifact
         self.criteria = criteria or CompletionCriteria()
         self.trace = ExecutionTrace(self.run_id)
         self.error: str | None = None
@@ -134,6 +135,7 @@ def execute_task(
     max_tool_calls: int = 3,
     max_iterations: int = 5,
     provider_fallback: bool = False,
+    max_concurrency: int | None = None,
 ) -> TaskExecutionSession:
     """Run one full task session offline-first through the existing engine.
 
@@ -181,8 +183,14 @@ def execute_task(
             max_tool_calls=max_tool_calls,
             max_iterations=max_iterations,
         )
+        # AT-AUDIT-001: the cap has to reach the scheduler, otherwise the core
+        # execution path runs the whole ready wave through ``asyncio.gather``
+        # with no limit at all.
         scheduler = AsyncDAGScheduler(
-            executor=runtime, retry_policy=RetryPolicy(max_retries=2), timeout=timeout
+            executor=runtime,
+            max_concurrency=max_concurrency,
+            retry_policy=RetryPolicy(max_retries=2),
+            timeout=timeout,
         )
         results = asyncio.run(
             scheduler.run(Task(description=task), plan.topology, plan.agents)
@@ -197,11 +205,19 @@ def execute_task(
                     message=f"succeeded on attempt {result.attempt}",
                     attempts=len(result.attempts),
                 )
+        # AT-AUDIT-003: AGENT_REPLANNED must mean "the plan really changed".
+        # A Replanner no-op (or an invalid / unapplied candidate) still leaves a
+        # record in ``scheduler.replan_events`` for observability, but it must not
+        # be reported to the trace / SSE timeline as a successful replan.
         for event in scheduler.replan_events:
+            if not event.applied:
+                continue
             trace.record(
                 "AGENT_REPLANNED",
                 agent_id=event.failed_agent_id,
                 message=event.reason,
+                previous_topology=event.previous_topology,
+                new_topology=event.new_topology,
             )
 
         session.artifacts = [
@@ -267,12 +283,13 @@ def execute_task(
         # success count.
         fully_successful = 0
         partial_count = 0
-        for result in results.values():
+        for agent_id, result in results.items():
             if result.status is not ExecutionStatus.SUCCESS:
                 continue
             output = result.output
             if isinstance(output, AgentArtifact) and output.metadata.get("partial"):
                 partial_count += 1
+                session.partial_agent_ids.add(agent_id)
             else:
                 fully_successful += 1
         # v0.6.0-final (R2): only a *truly unmet* source need — a source-required
@@ -325,6 +342,7 @@ def execute_task(
             max_tool_calls=max_tool_calls,
             max_iterations=max_iterations,
             provider_fallback=False,
+            max_concurrency=max_concurrency,
         )
         fallback.trace.record(
             "PROVIDER_FALLBACK",

@@ -15,6 +15,7 @@ export interface AgentResultDto {
   attempt: number
   error: string | null
   duration: number | null
+  partial?: boolean
 }
 
 export interface FinalArtifactDto {
@@ -239,6 +240,7 @@ export type AgentStatus =
   | 'failed'
   | 'retry'
   | 'skipped'
+  | 'partial'
 // M1: a ready-to-draw DAG edge (geometry computed by the parent from the DOM).
 export interface GraphEdgeShape {
   id: string

@@ -276,13 +276,20 @@ def test_counts_single_source() -> None:
     assert counts["multi_source"] == 0
 
 
-def test_counts_agent_consensus_is_supported_derivation() -> None:
+def test_counts_agent_consensus_and_derived_are_not_external_support() -> None:
+    """AT-AUDIT-004: agreeing agents and model estimates are not a source.
+
+    They keep their own counters (and count as internal backing) but must never
+    inflate the ``supported`` headline.
+    """
     index = {"e1": object()}
     for level in ("agent_consensus", "derived"):
         findings = [_finding("f1", ["e1"], support_level=level)]
         counts = compute_finding_counts(findings, index)
-        assert counts["supported"] == 1, level
-        assert counts["unverified"] == 0
+        assert counts["supported"] == 0, level
+        assert counts["unverified"] == 1, level
+        assert counts["backed_count"] == 1, level
+        assert counts[level] == 1, level
 
 
 def test_counts_planning_assumption_is_unverified() -> None:
