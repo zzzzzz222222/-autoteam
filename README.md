@@ -24,9 +24,9 @@ Task
 
 AutoTeam is an **experimental**, offline-safe, deterministic-by-default framework. Everything runs with **no API key and no network**; a real LLM and real web search are optional, plug-in capabilities.
 
-**Python 3.11+ · `pytest` 510 passed / 7 skipped · `ruff` clean · `npm run build` pass · CI: Python 3.11 & 3.12**
+**Python 3.11+ · `pytest` 621 passed / 7 skipped · `ruff` clean · `npm run build` pass · CI: Python 3.11 & 3.12**
 
-Latest release notes: [RELEASE_NOTES_v0.6.1.md](RELEASE_NOTES_v0.6.1.md)
+Latest release notes: [RELEASE_NOTES_v0.6.2.md](RELEASE_NOTES_v0.6.2.md)
 
 ---
 
@@ -162,6 +162,7 @@ flowchart LR
 | v0.5.0 | Real-World Agent Execution (real/mock LLM, executable tools, Sources/Evidence, validation) |
 | v0.6.0 | Agent Team Synthesis (evidence filtering, cross-agent insights, contradictions/uncertainties, trade-offs, recommendations, `claim_type`, provenance audit, Result-page readability) |
 | v0.6.1 | Honesty & Reliability Hardening (source identity + claim support audit, evidence selection, structured-output failure classification, adaptive `length_limit` retry, token/usage/cost observability, real-E2E truth verdicts, executive-summary states, deterministic finding counts) |
+| v0.6.2 | Release closure for the Honesty & Reliability Hardening (finding-level support-audit persistence, per-run result-store isolation, replan topology application, Web UI version-label fix, removal of the runtime Google Fonts dependency) |
 
 ## Killer Demo
 
